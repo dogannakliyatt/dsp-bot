@@ -3,19 +3,18 @@ from discord.ext import commands
 from discord import app_commands
 import datetime
 import asyncio
+import random
 
-# --- Katılım Şartları Modalı (Form Penceresi) ---
 class RequirementsModal(discord.ui.Modal, title="Katılım Şartları"):
     requirements = discord.ui.TextInput(
         label="Şartları Girin",
         style=discord.TextStyle.paragraph,
-        placeholder="Örn: Youtube kanalına abone olmak, belirli bir role sahip olmak...",
+        placeholder="Örn: Abone olmak, belirli bir role sahip olmak...",
         required=True,
         max_length=1000
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Kullanıcının girdiği şartları doğrudan yanıt olarak döndür
         embed = discord.Embed(
             title="📋 Çekiliş Katılım Şartları",
             description=self.requirements.value,
@@ -23,14 +22,12 @@ class RequirementsModal(discord.ui.Modal, title="Katılım Şartları"):
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# --- Çekiliş Yönetim Butonları ---
 class GiveawayView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
     @discord.ui.button(label="Katılım Şartları", style=discord.ButtonStyle.primary, custom_id="giveaway_req_btn")
     async def requirements_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # 3 saniyelik zaman aşımına uğramamak için Modal'ı anında açıyoruz
         await interaction.response.send_modal(RequirementsModal())
 
 class GiveawayCog(commands.Cog):
@@ -40,7 +37,6 @@ class GiveawayCog(commands.Cog):
     @app_commands.command(name="çekiliş", description="Yeni bir çekiliş başlatır.")
     @app_commands.checks.has_permissions(administrator=True)
     async def giveaway(self, interaction: discord.Interaction, ödül: str, kazanan_sayısı: int, süre_dakika: int):
-        # İşlem uzun sürebileceğinden zaman aşımını önlemek için botun çalıştığını bildiriyoruz
         await interaction.response.defer(ephemeral=False)
 
         embed = discord.Embed(
@@ -52,13 +48,11 @@ class GiveawayCog(commands.Cog):
         embed.set_footer(text="Bitiş Zamanı")
 
         view = GiveawayView()
-        # defer kullandığımız için send_message yerine followup.send kullanıyoruz
         message = await interaction.followup.send(embed=embed, view=view)
         await message.add_reaction("🎉")
 
         await asyncio.sleep(süre_dakika * 60)
 
-        # Çekilişi sonlandırma mantığı
         fetch_msg = await interaction.channel.fetch_message(message.id)
         reaction = discord.utils.get(fetch_msg.reactions, emoji="🎉")
 
@@ -68,7 +62,6 @@ class GiveawayCog(commands.Cog):
             await interaction.channel.send(f"❌ **{ödül}** çekilişine yeterli katılım olmadı.")
             return
 
-        import random
         winners = random.sample(users, min(len(users), kazanan_sayısı))
         winner_mentions = ", ".join([w.mention for w in winners])
 
