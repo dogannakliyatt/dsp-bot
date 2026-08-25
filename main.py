@@ -1,8 +1,8 @@
-import discord
-from discord.ext import commands
 import os
 import asyncio
 import traceback
+import discord
+from discord.ext import commands
 from flask import Flask
 from threading import Thread
 
@@ -54,9 +54,9 @@ async def main():
     keep_alive()
     async with bot:
         await load_extensions()
-        token = os.getenv("TOKEN")
+        token = os.getenv("DISCORD_TOKEN")
         if not token:
-            print("❌ HATA: TOKEN bulunamadı!")
+            print("❌ HATA: DISCORD_TOKEN bulunamadı!")
             return
         await bot.start(token)
 
