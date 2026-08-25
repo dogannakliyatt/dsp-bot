@@ -3,3 +3,4 @@ python-dotenv>=1.0.0
 Flask>=3.0.0
 PyNaCl
 davey
+pytz
