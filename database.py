@@ -1,56 +1,45 @@
 import sqlite3
-import os
 
-DB_NAME = "dsp_bot.db"
+def get_connection():
+    return sqlite3.connect("database.db")
 
 def init_db():
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS registers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            username TEXT NOT NULL,
-            nickname TEXT NOT NULL,
-            parti_makam TEXT NOT NULL,
-            parti_kisaltma TEXT NOT NULL,
-            rp_makam TEXT NOT NULL,
-            rp_kisaltma TEXT NOT NULL,
-            given_roles TEXT NOT NULL,
-            staff_id INTEGER NOT NULL,
-            register_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            user_id INTEGER,
+            username TEXT,
+            new_nick TEXT,
+            parti_name TEXT,
+            parti_code TEXT,
+            rp_name TEXT,
+            rp_code TEXT,
+            roles_given TEXT,
+            staff_id INTEGER,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     conn.commit()
     conn.close()
 
-def add_register(user_id, username, nickname, parti_makam, parti_kisaltma, rp_makam, rp_kisaltma, given_roles, staff_id):
-    conn = sqlite3.connect(DB_NAME)
+def add_register(user_id, username, new_nick, parti_name, parti_code, rp_name, rp_code, roles_given, staff_id):
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO registers (user_id, username, nickname, parti_makam, parti_kisaltma, rp_makam, rp_kisaltma, given_roles, staff_id)
+        INSERT INTO registers (user_id, username, new_nick, parti_name, parti_code, rp_name, rp_code, roles_given, staff_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (user_id, username, nickname, parti_makam, parti_kisaltma, rp_makam, rp_kisaltma, given_roles, staff_id))
+    ''', (user_id, username, new_nick, parti_name, parti_code, rp_name, rp_code, roles_given, staff_id))
     conn.commit()
     conn.close()
 
-def get_top_staff():
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT staff_id, COUNT(id) as total FROM registers
-        GROUP BY staff_id ORDER BY total DESC
-    ''')
-    rows = cursor.fetchall()
-    conn.close()
-    return rows
 # --- OYLAMA SİSTEMİ VERİTABANI İŞLEMLERİ ---
 
 def init_poll_db():
     conn = get_connection()
     cursor = conn.cursor()
     
-    # Oylamalar Tablosu
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS polls (
             poll_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,7 +50,6 @@ def init_poll_db():
         )
     ''')
     
-    # Adaylar Tablosu
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS poll_candidates (
             candidate_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,7 +59,6 @@ def init_poll_db():
         )
     ''')
     
-    # Kullanılan Oylar Tablosu (Tek oy kontrolü için)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS poll_votes (
             poll_id INTEGER NOT NULL,
@@ -130,13 +117,6 @@ def get_candidates(poll_id):
     conn.close()
     return rows
 
-def remove_candidate(candidate_id):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM poll_candidates WHERE candidate_id = ?", (candidate_id,))
-    conn.commit()
-    conn.close()
-
 def has_voted(poll_id, user_id):
     conn = get_connection()
     cursor = conn.cursor()
@@ -173,3 +153,7 @@ def delete_poll(poll_id):
     cursor.execute("DELETE FROM poll_votes WHERE poll_id = ?", (poll_id,))
     conn.commit()
     conn.close()
+
+# Tabloları Otomatik Başlat
+init_db()
+init_poll_db()
