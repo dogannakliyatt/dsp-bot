@@ -2,62 +2,63 @@ import discord
 from discord.ext import commands
 import os
 import asyncio
-from threading import Thread
+import traceback
 from flask import Flask
+from threading import Thread
 
-# --- 1. Render 7/24 Aktiflik İçin Flask Web Sunucusu ---
-app = Flask(__name__)
+# Web Server (Render pings)
+app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot 7/24 Aktif!"
+    return "Bot Aktif!"
 
 def run_flask():
     app.run(host='0.0.0.0', port=8080)
 
-# --- 2. Discord Bot Kurulumu ---
+def keep_alive():
+    t = Thread(target=run_flask)
+    t.daemon = True
+    t.start()
+
+# Discord Bot
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
-intents.presences = True
+intents.voice_states = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# --- 3. Bot Hazır Olduğunda Komutları Sunucuya Anında Senkronize Et ---
 @bot.event
 async def on_ready():
-    print(f"✅ Bot {bot.user} olarak giriş yaptı!")
+    print(f"✅ {bot.user} olarak giriş yapıldı.")
     try:
-        GUILD_ID = 1537126439739199619
-        guild = discord.Object(id=GUILD_ID)
-        
-        bot.tree.copy_global_to(guild=guild)
-        synced = await bot.tree.sync(guild=guild)
-        print(f"⚡ {len(synced)} slash komutu sunucuya ANINDA senkronize edildi!")
+        synced = await bot.tree.sync()
+        print(f"🔁 {len(synced)} adet slash komutu senkronize edildi.")
     except Exception as e:
         print(f"❌ Komutlar senkronize edilirken hata oluştu: {e}")
 
-# --- 4. Cogs (Komut Dosyalarını) Yükleme ---
 async def load_extensions():
-    for filename in os.listdir('./commands'):
-        if filename.endswith('.py'):
-            await bot.load_extension(f'commands.{filename[:-3]}')
-            print(f"📦 Yüklendi: commands.{filename[:-3]}")
+    if os.path.exists('./commands'):
+        for filename in os.listdir('./commands'):
+            if filename.endswith('.py'):
+                cog_name = f'commands.{filename[:-3]}'
+                try:
+                    await bot.load_extension(cog_name)
+                    print(f"📦 Yüklendi: {cog_name}")
+                except Exception as e:
+                    print(f"❌ {cog_name} yüklenirken HATA oluştu:")
+                    traceback.print_exc()
 
-# --- 5. Botu Başlatma ---
 async def main():
-    # Flask sunucusunu arka planda başlat
-    Thread(target=run_flask).start()
-    
-    # Komut dosyalarını yükle
-    await load_extensions()
-    
-    # Bot Tokenı ile giriş yap
-    token = os.getenv("DISCORD_TOKEN")
-    if token:
+    keep_alive()
+    async with bot:
+        await load_extensions()
+        token = os.getenv("TOKEN")
+        if not token:
+            print("❌ HATA: TOKEN bulunamadı!")
+            return
         await bot.start(token)
-    else:
-        print("❌ HATA: DISCORD_TOKEN çevre değişkeni bulunamadı!")
 
 if __name__ == "__main__":
     asyncio.run(main())
