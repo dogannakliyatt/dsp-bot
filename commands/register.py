@@ -63,24 +63,30 @@ class RegisterCommands(commands.Cog):
         roles_to_add = []
         added_role_names = []
 
-        # Parti Rolü Eşleştirme
+        # 1. ZORUNLU DSP ÜYESİ ROLÜ (1537153933305315328 ID'li rol her kayıt olana her zaman verilir)
+        dsp_uye_role = interaction.guild.get_role(1537153933305315328)
+        if dsp_uye_role:
+            roles_to_add.append(dsp_uye_role)
+            added_role_names.append(dsp_uye_role.name)
+
+        # 2. Seçilen Parti Rolleri Eşleştirme
         parti_role_ids = config.PARTI_ROLES.get(partimakam.value, [])
         for r_id in parti_role_ids:
             role = interaction.guild.get_role(r_id)
-            if role:
+            if role and role not in roles_to_add:
                 roles_to_add.append(role)
                 added_role_names.append(role.name)
 
-        # RP Rolü Eşleştirme
+        # 3. Seçilen RP Rolleri Eşleştirme
         if rpmakam.value != "Yok":
             rp_role_ids = config.RP_ROLES.get(rpmakam.value, [])
             for r_id in rp_role_ids:
                 role = interaction.guild.get_role(r_id)
-                if role:
+                if role and role not in roles_to_add:
                     roles_to_add.append(role)
                     added_role_names.append(role.name)
 
-        # Kayıtsız Rolünü Kaldırma
+        # 4. ZORUNLU KAYITSIZ ROLÜNÜ KALDIRMA (1537154022497329233 ID'li rol her zaman alınır)
         unreg_role = interaction.guild.get_role(config.UNREGISTERED_ROLE_ID)
         if unreg_role in kullanici.roles:
             try:
@@ -88,7 +94,7 @@ class RegisterCommands(commands.Cog):
             except Exception:
                 pass
 
-        # Yeni Rolleri Ekleme
+        # 5. Yeni Rolleri Ekleme
         if roles_to_add:
             try:
                 await kullanici.add_roles(*roles_to_add)
@@ -96,7 +102,6 @@ class RegisterCommands(commands.Cog):
                 pass
 
         # Takma Ad Oluşturma Kuralları
-        # Manuel yazılan İsim kullanılır. RP Makamı 'Yok' ise takma ada eklenmez.
         if rpmakam.value == "Yok":
             new_nick = f"{isim} / {partimakam.value}"
         else:
