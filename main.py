@@ -7,8 +7,8 @@ import asyncio
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
+intents.voice_states = True  # Ses takibi için eklendi
 
-# Hem D! hem d! prefix kullanımını destekler
 bot = commands.Bot(command_prefix=["D!", "d!"], intents=intents)
 
 initial_extensions = [
@@ -16,7 +16,8 @@ initial_extensions = [
     'commands.register',
     'commands.counter',
     'commands.poll',
-    'commands.clear'
+    'commands.clear',
+    'commands.voice'  # Ses modülü eklendi
 ]
 
 @bot.event
