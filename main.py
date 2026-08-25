@@ -23,13 +23,12 @@ intents.presences = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# --- 3. Bot Hazır Olduğunda Komutları Anında Senkronize Et ---
+# --- 3. Bot Hazır Olduğunda Komutları Sunucuya Anında Senkronize Et ---
 @bot.event
 async def on_ready():
     print(f"✅ Bot {bot.user} olarak giriş yaptı!")
     try:
-        # Kendi sunucu ID'ni buraya yaz (Örn: 123456789012345678)
-        GUILD_ID = 123456789012345678  
+        GUILD_ID = 1537126439739199619
         guild = discord.Object(id=GUILD_ID)
         
         bot.tree.copy_global_to(guild=guild)
