@@ -1,11 +1,40 @@
 import discord
 from discord import app_commands, ui
 from discord.ext import commands
+import asyncio
+import random
+import re
+from datetime import datetime, timedelta
+
+def parse_duration(duration_str: str) -> int:
+    """Girilen Türkçe süre metnini saniyeye çevirir."""
+    total_seconds = 0
+    days = re.search(r'(\d+)\s*(gün|g)', duration_str, re.IGNORECASE)
+    hours = re.search(r'(\d+)\s*(saat|sa|s)', duration_str, re.IGNORECASE)
+    minutes = re.search(r'(\d+)\s*(dakika|dk|d)', duration_str, re.IGNORECASE)
+    seconds = re.search(r'(\d+)\s*(saniye|sn)', duration_str, re.IGNORECASE)
+
+    if days:
+        total_seconds += int(days.group(1)) * 86400
+    if hours:
+        total_seconds += int(hours.group(1)) * 3600
+    if minutes:
+        total_seconds += int(minutes.group(1)) * 60
+    if seconds:
+        total_seconds += int(seconds.group(1))
+
+    if total_seconds == 0:
+        digits = re.findall(r'\d+', duration_str)
+        if digits:
+            total_seconds = int(digits[0]) * 60
+        else:
+            total_seconds = 60
+    return total_seconds
 
 # 1. Aşama: Form (Modal)
 class GiveawayModal(ui.Modal, title="Çekiliş Oluştur"):
     prize = ui.TextInput(label="Ödül Gir", placeholder="Örn: deneme", required=True)
-    duration = ui.TextInput(label="Süreyi Gir (1 gün 5 saat 45 dakika)", placeholder="Örn: 1 gün", required=True)
+    duration = ui.TextInput(label="Süreyi Gir (1 gün 5 saat 45 dakika)", placeholder="Örn: 1 gün / 10 dakika", required=True)
     winners = ui.TextInput(label="Kazanan Sayısını Gir", default="1", required=True)
 
     def __init__(self, target_channel: discord.TextChannel):
@@ -13,10 +42,18 @@ class GiveawayModal(ui.Modal, title="Çekiliş Oluştur"):
         self.target_channel = target_channel
 
     async def on_submit(self, interaction: discord.Interaction):
+        try:
+            winner_count = int(self.winners.value)
+        except ValueError:
+            winner_count = 1
+
+        seconds = parse_duration(self.duration.value)
+
         view = SetupView(
             prize=self.prize.value,
             duration_str=self.duration.value,
-            winners=self.winners.value,
+            duration_seconds=seconds,
+            winners=winner_count,
             target_channel=self.target_channel,
             author=interaction.user
         )
@@ -24,11 +61,11 @@ class GiveawayModal(ui.Modal, title="Çekiliş Oluştur"):
         embed.add_field(name="⏰ Çekiliş Süresi", value=f"**{self.duration.value}**", inline=False)
         embed.add_field(name="🎉 Çekilişin Ödülü", value=f"**{self.prize.value}**", inline=False)
         embed.add_field(name="📢 Çekiliş Kanalı", value=self.target_channel.mention, inline=False)
-        embed.add_field(name="👑 Kazanan Sayısı", value=f"**{self.winners.value}**", inline=False)
+        embed.add_field(name="👑 Kazanan Sayısı", value=f"**{winner_count}**", inline=False)
         
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-# 2. Aşama: Şartlar Menüsü (Select Menu)
+# 2. Aşama: Şartlar Menüsü
 class RequirementsSelect(ui.Select):
     def __init__(self):
         options = [
@@ -51,12 +88,13 @@ class RequirementsView(ui.View):
         super().__init__()
         self.add_item(RequirementsSelect())
 
-# 3. Aşama: Kurulum Paneli Butonları
+# 3. Aşama: Kurulum Paneli
 class SetupView(ui.View):
-    def __init__(self, prize, duration_str, winners, target_channel, author):
+    def __init__(self, prize, duration_str, duration_seconds, winners, target_channel, author):
         super().__init__(timeout=None)
         self.prize = prize
         self.duration_str = duration_str
+        self.duration_seconds = duration_seconds
         self.winners = winners
         self.target_channel = target_channel
         self.author = author
@@ -81,22 +119,67 @@ class SetupView(ui.View):
     async def reqs(self, interaction: discord.Interaction, button: ui.Button):
         await interaction.response.send_message("Katılım Şartları Menüsü:", view=RequirementsView(), ephemeral=True)
 
-    @ui.button(label="📌 Çekiliş Bitir", style=discord.ButtonStyle.danger, row=3)
+    @ui.button(label="🎉 Çekiliş Başlat", style=discord.ButtonStyle.danger, row=3)
     async def start_giveaway(self, interaction: discord.Interaction, button: ui.Button):
+        end_time = datetime.now() + timedelta(seconds=self.duration_seconds)
+        end_timestamp = int(end_time.timestamp())
+
         embed = discord.Embed(
             title=f"🎉 {self.prize}",
             color=discord.Color.green()
         )
         embed.add_field(name="💰 Çekilişi Başlatan:", value=self.author.mention, inline=False)
         embed.add_field(name="⏰ Çekiliş Süresi:", value=self.duration_str, inline=False)
-        embed.add_field(name="👑 Kazanan Sayısı:", value=self.winners, inline=False)
+        embed.add_field(name="📅 Çekilişin Biteceği Tarih:", value=f"<t:{end_timestamp}:F> (<t:{end_timestamp}:R>)", inline=False)
+        embed.add_field(name="👑 Kazanan Sayısı:", value=str(self.winners), inline=False)
         embed.set_thumbnail(url="https://cdn-icons-png.flaticon.com/512/6828/6828694.png")
 
-        view = GiveawayPublicView()
-        
-        # Seçilen Hedef Kanala Gönder
-        await self.target_channel.send(embed=embed, view=view)
+        public_view = GiveawayPublicView()
+        msg = await self.target_channel.send(embed=embed, view=public_view)
         await interaction.response.send_message(f"✅ Çekiliş başarıyla {self.target_channel.mention} kanalında yayınlandı!", ephemeral=True)
+
+        # Arka Planda Zamanlayıcı Başlat
+        asyncio.create_task(self.run_timer(msg, public_view, end_timestamp))
+
+    async def run_timer(self, msg: discord.Message, view: 'GiveawayPublicView', end_timestamp: int):
+        now = datetime.now().timestamp()
+        wait_seconds = end_timestamp - now
+        if wait_seconds > 0:
+            await asyncio.sleep(wait_seconds)
+
+        # Süre Bitti - Kazananları Seç
+        participants = list(view.participants)
+        
+        # Katılan Butonunu Devre Dışı Bırak
+        for child in view.children:
+            child.disabled = True
+        await msg.edit(view=view)
+
+        if not participants:
+            end_embed = discord.Embed(
+                title=f"🎉 {self.prize} (Sona Erdi)",
+                description="❌ Çekilişe kimse katılmadığı için kazanan seçilemedi.",
+                color=discord.Color.red()
+            )
+            await msg.edit(embed=end_embed)
+            await msg.channel.send(f"❌ **{self.prize}** çekilişine yeterli katılım olmadı.")
+            return
+
+        # Belirlenen sayıda kazanan seç
+        winner_count = min(self.winners, len(participants))
+        winners = random.sample(participants, winner_count)
+        winners_mentions = ", ".join([f"<@{user_id}>" for user_id in winners])
+
+        end_embed = discord.Embed(
+            title=f"🎉 {self.prize} (Sona Erdi)",
+            color=discord.Color.gold()
+        )
+        end_embed.add_field(name="💰 Çekilişi Başlatan:", value=self.author.mention, inline=False)
+        end_embed.add_field(name="👑 Kazanan(lar):", value=winners_mentions, inline=False)
+        end_embed.set_thumbnail(url="https://cdn-icons-png.flaticon.com/512/6828/6828694.png")
+
+        await msg.edit(embed=end_embed)
+        await msg.channel.send(f"🎊 Tebrikler {winners_mentions}! **{self.prize}** ödülünü kazandınız!")
 
 # 4. Aşama: Yayınlanan Çekiliş Butonları
 class GiveawayPublicView(ui.View):
@@ -113,7 +196,7 @@ class GiveawayPublicView(ui.View):
             self.participants.add(interaction.user.id)
             await interaction.response.send_message("✅ Çekilişe başarıyla katıldınız!", ephemeral=True)
 
-# Slash Komutu (Kanal Parametreli)
+# Slash Komutu
 class GiveawayCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
