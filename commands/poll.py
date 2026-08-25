@@ -5,6 +5,9 @@ import config
 import database
 import datetime
 
+# Rol ID: Oylama bitince kanalı görmesi engellenecek rol
+TARGET_ROLE_ID = 1537153933305315328
+
 # --- OY VERME VE ONAY VIEW BİLEŞENLERİ ---
 
 class OyOnayView(discord.ui.View):
@@ -22,7 +25,7 @@ class OyOnayView(discord.ui.View):
 
         success = database.cast_vote(self.poll_id, interaction.user.id, self.candidate_id)
         if success:
-            await interaction.response.send_message(f"✅ Oy verme işleminiz başarıyla kaydedildi! Tercihiniz: **{self.candidate_name}**", ephemeral=True)
+            await interaction.response.edit_message(content=f"✅ Oy verme işleminiz başarıyla kaydedildi! Tercihiniz: **{self.candidate_name}**", view=None)
             
             # Log Kanalına Bildirim Gönderme
             log_channel = interaction.guild.get_channel(config.POLL_LOG_CHANNEL_ID)
@@ -37,11 +40,12 @@ class OyOnayView(discord.ui.View):
                 log_embed.add_field(name="Verilen Oy (Aday)", value=f"**{self.candidate_name}**", inline=False)
                 await log_channel.send(embed=log_embed)
         else:
-            await interaction.response.send_message("❌ Oy kaydı sırasında bir hata oluştu.", ephemeral=True)
+            await interaction.response.edit_message(content="❌ Oy kaydı sırasında bir hata oluştu.", view=None)
 
     @discord.ui.button(label="Hayır, İptal Et", style=discord.ButtonStyle.red, custom_id="btn_hayir_oy")
     async def hayir_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("Oy verme işlemi iptal edildi.", ephemeral=True)
+        # Onay mesajını doğrudan düzenler ve butonları kaldırır
+        await interaction.response.edit_message(content="Oy verme işlemi iptal edildi.", view=None)
 
 
 class AdaySelect(discord.ui.Select):
@@ -62,8 +66,13 @@ class AdaySelect(discord.ui.Select):
         candidates = database.get_candidates(self.poll_id)
         candidate_name = next((c[1] for c in candidates if c[0] == selected_candidate_id), "Bilinmeyen Aday")
 
+        # Seçim yapıldıktan sonra ana menüdeki seçimi sıfırlamak için View'ı yeniden güncelliyoruz
+        reset_view = OylamaView(self.poll_id, self.poll_title)
+        await interaction.response.edit_message(view=reset_view)
+
+        # Kullanıcıya onay penceresini gizli (ephemeral) olarak gönderiyoruz
         view = OyOnayView(self.poll_id, selected_candidate_id, candidate_name, self.poll_title)
-        await interaction.response.send_message(
+        await interaction.followup.send(
             content=f"**{candidate_name}** isimli adaya oy vermek istediğinize emin misiniz?",
             view=view,
             ephemeral=True
@@ -99,11 +108,11 @@ class İptalOnayView(discord.ui.View):
                 pass
         
         database.delete_poll(self.poll_id)
-        await interaction.response.send_message(f"✅ **{self.poll_title}** isimli oylama tamamen iptal edildi ve silindi.", ephemeral=True)
+        await interaction.response.edit_message(content=f"✅ **{self.poll_title}** isimli oylama tamamen iptal edildi ve silindi.", view=None)
 
     @discord.ui.button(label="Hayır, Vazgeç", style=discord.ButtonStyle.red)
     async def hayir_iptal(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("İptal işlemi vazgeçildi.", ephemeral=True)
+        await interaction.response.edit_message(content="İptal işlemi vazgeçildi.", view=None)
 
 
 # --- KOMUT SINIFI ---
@@ -176,7 +185,7 @@ class PollCommands(commands.Cog):
 
         await interaction.response.send_message(f"✅ **{aday_ismi}** adayı **{poll[1]}** oylamasına başarıyla eklendi!", ephemeral=True)
 
-    @app_commands.command(name="oylamabitir", description="Oylamayı sonlandırır ve sonuçları açıklar.")
+    @app_commands.command(name="oylamabitir", description="Oylamayı sonlandırır, log kanalına sonuçları iletir ve kanalı kapatır.")
     @app_commands.describe(oylama="Sonlandırılacak oylama")
     @app_commands.autocomplete(oylama=active_poll_autocomplete)
     async def oylama_bitir(self, interaction: discord.Interaction, oylama: str):
@@ -211,24 +220,31 @@ class PollCommands(commands.Cog):
             res_embed.add_field(name="Aday Oy Dağılımı", value="Hiç aday yoktu.", inline=False)
 
         channel = interaction.guild.get_channel(poll[2])
-        if channel and poll[3]:
-            try:
-                msg = await channel.fetch_message(poll[3])
-                ended_embed = discord.Embed(
-                    title=f"🔒 OYLAMA SONLANDI: {poll[1]}",
-                    description="Bu oylama süresi dolduğu için erişime kapatılmıştır.",
-                    color=discord.Color.red()
-                )
-                await msg.edit(embed=ended_embed, view=None)
-                await channel.send(embed=res_embed)
-            except Exception as e:
-                print(f"Sonuç mesajı hatası: {e}")
+        if channel:
+            if poll[3]:
+                try:
+                    msg = await channel.fetch_message(poll[3])
+                    ended_embed = discord.Embed(
+                        title=f"🔒 OYLAMA SONLANDI: {poll[1]}",
+                        description="Bu oylama süresi dolduğu için erişime kapatılmıştır.",
+                        color=discord.Color.red()
+                    )
+                    await msg.edit(embed=ended_embed, view=None)
+                except Exception as e:
+                    print(f"Mesaj düzenleme hatası: {e}")
+
+            target_role = interaction.guild.get_role(TARGET_ROLE_ID)
+            if target_role:
+                try:
+                    await channel.set_permissions(target_role, view_channel=False)
+                except Exception as e:
+                    print(f"Kanal izinleri güncellenirken hata oluştu: {e}")
 
         log_channel = interaction.guild.get_channel(config.POLL_LOG_CHANNEL_ID)
         if log_channel:
             await log_channel.send(embed=res_embed)
 
-        await interaction.response.send_message(f"✅ **{poll[1]}** oylaması başarıyla sonlandırıldı ve sonuçlar yayınlandı.", ephemeral=True)
+        await interaction.response.send_message(f"✅ **{poll[1]}** oylaması başarıyla sonlandırıldı. Sonuçlar log kanalına gönderildi ve ilgili rol için kanal erişimi kapatıldı.", ephemeral=True)
 
     @app_commands.command(name="oylamaiptal", description="Oylamayı sonuçlandırmadan siler.")
     @app_commands.describe(oylama="İptal edilecek oylama")
