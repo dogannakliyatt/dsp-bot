@@ -23,14 +23,18 @@ intents.presences = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# --- 3. Bot Hazır Olduğunda Komutları Senkronize Et ---
+# --- 3. Bot Hazır Olduğunda Komutları Anında Senkronize Et ---
 @bot.event
 async def on_ready():
     print(f"✅ Bot {bot.user} olarak giriş yaptı!")
     try:
-        # Çift komutları temizler ve komut listesini günceller
-        synced = await bot.tree.sync()
-        print(f"🔄 Toplam {len(synced)} slash komutu başarıyla senkronize edildi.")
+        # Kendi sunucu ID'ni buraya yaz (Örn: 123456789012345678)
+        GUILD_ID = 123456789012345678  
+        guild = discord.Object(id=GUILD_ID)
+        
+        bot.tree.copy_global_to(guild=guild)
+        synced = await bot.tree.sync(guild=guild)
+        print(f"⚡ {len(synced)} slash komutu sunucuya ANINDA senkronize edildi!")
     except Exception as e:
         print(f"❌ Komutlar senkronize edilirken hata oluştu: {e}")
 
