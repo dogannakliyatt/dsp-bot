@@ -8,13 +8,15 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+# Hem D! hem d! prefix kullanımını destekler
+bot = commands.Bot(command_prefix=["D!", "d!"], intents=intents)
 
 initial_extensions = [
     'commands.admin',
     'commands.register',
     'commands.counter',
-    'commands.poll'
+    'commands.poll',
+    'commands.clear'
 ]
 
 @bot.event
