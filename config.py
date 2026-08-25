@@ -1,7 +1,7 @@
 import os
 
 # Sunucu ve İzin Verilen Sistem Bilgileri
-GUILD_ID = 1537128637495808000  # Demokratik Sol Parti Sunucu ID
+GUILD_ID = 1537126439739199619  # Demokratik Sol Parti Sunucu ID
 AUTHORIZED_ROLE_ID = 1537129117152055426  # Yönetici & Kayıt Yetkilisi Rol ID
 UNREGISTERED_ROLE_ID = 1537154022497329233  # Kayıtsız Rol ID
 
