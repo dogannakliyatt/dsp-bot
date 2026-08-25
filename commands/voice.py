@@ -1,33 +1,38 @@
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
+from discord import app_commands
 
 class VoiceCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.voice_channel_id = 1541892351411101827  # Ses kanalı ID'niz
-        self.voice_check_loop.start()
 
-    def cog_unload(self):
-        self.voice_check_loop.cancel()
-
-    @tasks.loop(seconds=15)
-    async def voice_check_loop(self):
-        await self.bot.wait_until_ready()
-        
-        channel = self.bot.get_channel(self.voice_channel_id)
-        if not channel or not isinstance(channel, discord.VoiceChannel):
+    @app_commands.command(name="katıl", description="Bulunduğunuz ses kanalına katılır.")
+    async def join(self, interaction: discord.Interaction):
+        if not interaction.user.voice or not interaction.user.voice.channel:
+            await interaction.response.send_message("❌ Önce bir ses kanalına katılmalısınız!", ephemeral=True)
             return
 
-        guild = channel.guild
-        voice_client = guild.voice_client
+        target_channel = interaction.user.user_voice if hasattr(interaction.user, 'user_voice') else interaction.user.voice.channel
+        voice_client = interaction.guild.voice_client
 
-        # Eğer bot kanalda DEĞİLSE veya bağlantısı kopmuşsa bağlan
-        if voice_client is None or not voice_client.is_connected():
-            try:
-                await channel.connect(reconnect=True, self_deaf=True)
-                print(f"🔊 {channel.name} ses kanalına başarıyla bağlandı.")
-            except Exception as e:
-                print(f"❌ Ses kanalına bağlanırken hata: {e}")
+        if voice_client is None:
+            await target_channel.connect(reconnect=True, self_deaf=True)
+            await interaction.response.send_message(f"🔊 **{target_channel.name}** kanalına katıldım.")
+        elif voice_client.channel.id != target_channel.id:
+            await voice_client.move_to(target_channel)
+            await interaction.response.send_message(f"🔄 **{target_channel.name}** kanalına taşındım.")
+        else:
+            await interaction.response.send_message("Zaten bulunduğunuz ses kanalındayım.", ephemeral=True)
+
+    @app_commands.command(name="ayrıl", description="Ses kanalından ayrılır.")
+    async def leave(self, interaction: discord.Interaction):
+        voice_client = interaction.guild.voice_client
+
+        if voice_client is not None:
+            await voice_client.disconnect()
+            await interaction.response.send_message("👋 Ses kanalından ayrıldım.")
+        else:
+            await interaction.response.send_message("❌ Zaten herhangi bir ses kanalında değilim.", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(VoiceCog(bot))
