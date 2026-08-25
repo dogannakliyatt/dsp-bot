@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 import config
+import traceback
 
 class VoiceSystem(commands.Cog):
     def __init__(self, bot):
@@ -10,7 +11,6 @@ class VoiceSystem(commands.Cog):
     def cog_unload(self):
         self.voice_check_loop.cancel()
 
-    # Bot her 15 saniyede bir kanalda olup olmadığını kontrol eder, yoksa tekrar girer
     @tasks.loop(seconds=15)
     async def voice_check_loop(self):
         await self.bot.wait_until_ready()
@@ -21,6 +21,7 @@ class VoiceSystem(commands.Cog):
 
         channel = self.bot.get_channel(target_channel_id)
         if not channel or not isinstance(channel, discord.VoiceChannel):
+            print(f"❌ Ses kanalı bulunamadı! Girilen ID: {target_channel_id}")
             return
 
         guild = channel.guild
@@ -29,14 +30,15 @@ class VoiceSystem(commands.Cog):
         if voice_client is None or not voice_client.is_connected():
             try:
                 await channel.connect(reconnect=True, self_deaf=True)
-                print(f"✅ Bot ses kanalına katıldı: {channel.name}")
+                print(f"✅ Bot ses kanalına başarıyla katıldı: {channel.name}")
             except Exception as e:
-                print(f"❌ Ses kanalına bağlanırken hata oluştu: {e}")
+                print(f"❌ Ses kanalına bağlanırken HATA oluştu: {e}")
+                traceback.print_exc()
         elif voice_client.channel.id != target_channel_id:
             try:
                 await voice_client.move_to(channel)
             except Exception as e:
-                print(f"❌ Kanal değiştirilirken hata oluştu: {e}")
+                print(f"❌ Kanal değiştirilirken HATA oluştu: {e}")
 
     @voice_check_loop.before_loop
     async def before_voice_check(self):
