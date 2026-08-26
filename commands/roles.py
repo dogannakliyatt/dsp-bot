@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import datetime
+import difflib
 import config
 
 REPORT_LOG_CHANNEL_ID = 1541807577837342834
@@ -10,9 +11,40 @@ class RoleManagement(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    # Akıllı Rol Bulucu (Etiket, ID, Tam İsim, Kısmi İsim ve Benzerlik)
+    def find_role(self, guild: discord.Guild, query: str):
+        query = query.strip()
+        
+        # 1. Rol Etiket veya ID Kontrolü (<@&123...> veya 123...)
+        clean_id = query.replace("<@&", "").replace(">", "").strip()
+        if clean_id.isdigit():
+            role_by_id = guild.get_role(int(clean_id))
+            if role_by_id:
+                return role_by_id
+
+        # 2. Tam Birebir İsim Eşleşmesi (Küçük/Büyük Harf Duyarsız)
+        query_lower = query.lower()
+        for role in guild.roles:
+            if role.name.lower() == query_lower:
+                return role
+
+        # 3. Kısmi İsim Eşleşmesi (Örn: 'Cumhurbaşkanı Yardımcısı' -> 'T.C. Cumhurbaşkanı Yardımcısı')
+        for role in guild.roles:
+            if role.is_default():
+                continue
+            if query_lower in role.name.lower() or role.name.lower() in query_lower:
+                return role
+
+        # 4. Yazım Hatası / Yakın Benzerlik Eşleşmesi (Fuzzy Match)
+        role_names = [r.name for r in guild.roles if not r.is_default()]
+        matches = difflib.get_close_matches(query, role_names, n=1, cutoff=0.6)
+        if matches:
+            return discord.utils.get(guild.roles, name=matches[0])
+
+        return None
+
     # Ortak Güvenlik ve Rol Verme Mantığı
     async def process_role_give(self, author: discord.Member, target: discord.Member, role: discord.Role, guild: discord.Guild):
-        # Yetkili Kontrolü
         staff_role_id = getattr(config, "STAFF_ROLE_ID", None)
         if staff_role_id:
             staff_role = guild.get_role(staff_role_id)
@@ -95,14 +127,10 @@ class RoleManagement(commands.Cog):
     @app_commands.describe(kullanıcı="Rol verilecek kullanıcı", rol="Verilecek rolü seçin veya ismini yazın")
     @app_commands.autocomplete(rol=role_autocomplete)
     async def rolver_slash(self, interaction: discord.Interaction, kullanıcı: discord.Member, rol: str):
-        target_role = None
-        if rol.isdigit():
-            target_role = interaction.guild.get_role(int(rol))
-        if not target_role:
-            target_role = discord.utils.get(interaction.guild.roles, name=rol)
+        target_role = self.find_role(interaction.guild, rol)
 
         if not target_role:
-            await interaction.response.send_message("❌ Belirtilen rol sunucuda bulunamadı!", ephemeral=True)
+            await interaction.response.send_message(f"❌ Sunucuda `{rol}` adında veya benzer bir rol bulunamadı!", ephemeral=True)
             return
 
         await interaction.response.defer()
@@ -121,17 +149,24 @@ class RoleManagement(commands.Cog):
         embed.set_footer(text=f"İşlemi Yapan: {interaction.user.display_name}")
         await interaction.followup.send(embed=embed)
 
-    # ------------------ d!rolver / D!rolver / d!rol / D!rol METİN KOMUTU ------------------
+    # ------------------ d!rol / D!rol / d!rolver / D!rolver METİN KOMUTU ------------------
     @commands.command(name="rolver", aliases=["Rolver", "ROLVER", "rol", "Rol", "ROL"])
-    async def rolver_prefix(self, ctx: commands.Context, kullanıcı: discord.Member = None, role: discord.Role = None):
-        if kullanıcı is None or role is None:
+    async def rolver_prefix(self, ctx: commands.Context, kullanıcı: discord.Member = None, *, rol_metni: str = None):
+        if kullanıcı is None or rol_metni is None:
             await ctx.reply(
-                "❌ **Hatalı Kullanım!**\nDoğru format: `d!rol @kullanıcı @rol` veya `D!rolver @kullanıcı @rol`",
+                "❌ **Hatalı Kullanım!**\nDoğru format: `d!rol @kullanıcı <Rol İsmi veya @Rol>`\nÖrnek: `d!rol @üye Cumhurbaşkanı Yardımcısı`",
                 mention_author=False
             )
             return
 
-        success, msg = await self.process_role_give(ctx.author, kullanıcı, role, ctx.guild)
+        # Akıllı arama ile rolü bul
+        target_role = self.find_role(ctx.guild, rol_metni)
+
+        if not target_role:
+            await ctx.reply(f"❌ Sunucuda `{rol_metni}` adında veya benzer bir rol bulunamadı!", mention_author=False)
+            return
+
+        success, msg = await self.process_role_give(ctx.author, kullanıcı, target_role, ctx.guild)
         if not success:
             await ctx.reply(msg, mention_author=False)
             return
@@ -149,10 +184,8 @@ class RoleManagement(commands.Cog):
     async def rolver_prefix_error(self, ctx: commands.Context, error: Exception):
         if isinstance(error, commands.MemberNotFound):
             await ctx.reply("❌ Belirtilen kullanıcı sunucuda bulunamadı!", mention_author=False)
-        elif isinstance(error, commands.RoleNotFound):
-            await ctx.reply("❌ Belirtilen rol sunucuda bulunamadı!", mention_author=False)
         elif isinstance(error, commands.BadArgument):
-            await ctx.reply("❌ Geçersiz bir kullanıcı veya rol etiketlediniz!", mention_author=False)
+            await ctx.reply("❌ Geçersiz bir kullanıcı etiketlediniz!", mention_author=False)
 
 async def setup(bot):
     await bot.add_cog(RoleManagement(bot))
