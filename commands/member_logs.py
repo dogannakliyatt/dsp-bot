@@ -67,7 +67,7 @@ class MemberLogs(commands.Cog):
             
             embed = discord.Embed(
                 description=(
-                    f":dspkus: Yeni Bir Kullanıcı Katıldı, 👋🏻 {member.mention}\n\n"
+                    f"👋🏻 Yeni Bir Kullanıcı Katıldı, {member.mention}\n\n"
                     f"☺️ Sunucumuza Hoş Geldin!\n\n"
                     f"🙂 Seninle Birlikte {member.guild.member_count} Kişiyiz.\n\n"
                     f"**Hesap Oluşturulma Tarihi:** {age_str}"
