@@ -1,9 +1,12 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
+import datetime
 import config
 
+# Taban Üye Rolü ve Kayıt Log Kanalı ID'si
 BASE_MEMBER_ROLE_ID = 1537153933305315328
+REGISTRATION_LOG_CHANNEL_ID = 1537159620374564875
 
 # Parti Makam Rol Eşleşmeleri
 PARTY_ROLES = {
@@ -102,7 +105,7 @@ class Register(commands.Cog):
         p_val = partimakamı.value
         r_val = rpmakamı.value
 
-        # İsim Mantığı (Düz üye ve yok ise sadece isim, aksi takdirde İsim / Makam)
+        # İsim / Takma Ad Düzenleme
         titles = []
         if p_val != "Üye":
             titles.append(p_val)
@@ -116,61 +119,94 @@ class Register(commands.Cog):
 
         try:
             await kullanıcı.edit(nick=new_nickname)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Takma ad güncellenemedi: {e}")
 
-        # Kayıtsız Rolünü Kaldır
+        # Kayıtsız Rolünü Kaldırma
         unreg_role_id = getattr(config, "UNREGISTERED_ROLE_ID", None)
         if unreg_role_id:
             unreg_role = interaction.guild.get_role(unreg_role_id)
             if unreg_role and unreg_role in kullanıcı.roles:
                 try:
                     await kullanıcı.remove_roles(unreg_role, reason="Kayıt tamamlandı.")
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"Kayıtsız rolü kaldırılamadı: {e}")
 
-        # Verilecek Rollerin Belirlenmesi
+        # Rolleri Belirleme
         roles_to_add = set()
         
-        # 1. Her koşulda eklenen taban üye rolü
+        # Taban Rol (DSP Üyesi)
         base_role = interaction.guild.get_role(BASE_MEMBER_ROLE_ID)
         if base_role:
             roles_to_add.add(base_role)
 
-        # 2. Parti Makam Rolleri
+        # Parti Makam Rolleri
         for r_id in PARTY_ROLES.get(p_val, []):
             role_obj = interaction.guild.get_role(r_id)
             if role_obj:
                 roles_to_add.add(role_obj)
 
-        # 3. RP Makam Rolleri
+        # RP Makam Rolleri
         for r_id in RP_ROLES.get(r_val, []):
             role_obj = interaction.guild.get_role(r_id)
             if role_obj:
                 roles_to_add.add(role_obj)
 
-        # Rolleri Tek Seferde Ata
+        # Rolleri Kullanıcıya Ekleme
         if roles_to_add:
             try:
                 await kullanıcı.add_roles(*list(roles_to_add), reason=f"Kayıt: {partimakamı.name} | {rpmakamı.name}")
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Roller verilemedi: {e}")
 
-        # Bilgi Embed Paneli
-        embed = discord.Embed(
-            title="🕊️ Kayıt Yapıldı!",
-            color=discord.Color.from_rgb(0, 168, 243)
+        # Verilen Roller Metni Hazırlığı
+        role_names = [r.name for r in roles_to_add if r.id != BASE_MEMBER_ROLE_ID]
+        roles_text_list = ["DSP Üyesi"] + role_names
+        roles_text = ", ".join(dict.fromkeys(roles_text_list))
+
+        # İstenen Görsel Formatındaki Embed
+        embed_desc = (
+            f"**Kayıt Edilen Kullanıcı**\n"
+            f"{kullanıcı.mention} ( `{kullanıcı.id}` )\n\n"
+            f"**Kayıt Eden Yetkili**\n"
+            f"{interaction.user.mention}\n"
+            f"( `{interaction.user.id}` )\n\n"
+            f"**Parti Makamı**\n"
+            f"{partimakamı.name} ({partimakamı.value})\n\n"
+            f"**RP Makamı**\n"
+            f"{rpmakamı.name} ({rpmakamı.value})\n\n"
+            f"**Verilen Roller**\n"
+            f"{roles_text}\n\n"
+            f"**Yeni Discord Takma Adı**\n"
+            f"{new_nickname}"
         )
-        embed.add_field(name="• Kayıt Edilen Kullanıcı", value=kullanıcı.mention, inline=False)
-        embed.add_field(name="• Kayıt Eden Kullanıcı", value=interaction.user.mention, inline=False)
-        embed.add_field(name="• Yeni İsim", value=new_nickname, inline=False)
-        
-        assigned_role_mentions = [r.mention for r in roles_to_add]
-        roles_str = ", ".join(assigned_role_mentions) if assigned_role_mentions else "Rol verilemedi"
-        embed.add_field(name="• Verilen Roller", value=roles_str, inline=False)
-        embed.set_thumbnail(url=kullanıcı.display_avatar.url)
 
+        embed = discord.Embed(
+            title="📋 Yeni Kayıt Logu",
+            description=embed_desc,
+            color=discord.Color.from_rgb(0, 168, 243),
+            timestamp=datetime.datetime.now(datetime.timezone.utc)
+        )
+
+        # 1. Komutun yazıldığı kanala yanıt ver
         await interaction.followup.send(embed=embed)
+
+        # 2. 1537159620374564875 ID'li Log Kanalına Gönder
+        log_channel = interaction.guild.get_channel(REGISTRATION_LOG_CHANNEL_ID)
+        if log_channel is None:
+            try:
+                log_channel = await interaction.guild.fetch_channel(REGISTRATION_LOG_CHANNEL_ID)
+            except Exception as e:
+                print(f"[HATA] Kayıt log kanalı bulunamadı/fetch edilemedi (ID: {REGISTRATION_LOG_CHANNEL_ID}): {e}")
+
+        if log_channel and log_channel.id != interaction.channel_id:
+            try:
+                await log_channel.send(embed=embed)
+                print(f"[BAŞARILI] Kayıt logu #{log_channel.name} kanalına atıldı.")
+            except discord.Forbidden:
+                print(f"[HATA] Botun #{log_channel.name} kanalına mesaj gönderme veya Embed bağlantısı izni yok!")
+            except Exception as e:
+                print(f"[HATA] Log gönderilirken hata oluştu: {e}")
 
 async def setup(bot):
     await bot.add_cog(Register(bot))
