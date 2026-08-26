@@ -1,15 +1,30 @@
 import discord
 from discord.ext import commands
+import datetime
 import config
 
 LOG_CHANNEL_ID = 1537161700380377138
 AUTOPING_CHANNEL_ID = 1537158034294448128
+WELCOME_CHANNEL_ID = 1537157370264944690
+STAFF_ROLE_ID = 1537129117152055426
+
+def calculate_account_age(created_at: datetime.datetime):
+    now = datetime.datetime.now(datetime.timezone.utc)
+    delta = now - created_at
+    total_days = delta.days
+    
+    years = total_days // 365
+    remaining_days = total_days % 365
+    months = remaining_days // 30
+    days = remaining_days % 30
+    
+    formatted_date = created_at.strftime("%d/%m/%Y")
+    return f"{formatted_date} & {days} Gün {months} Ay {years} Yıl önce"
 
 class MemberLogs(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # Sunucuya Biri Katıldığında
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
         # 1. Otomatik Kayıtsız Rolü Verme
@@ -22,7 +37,7 @@ class MemberLogs(commands.Cog):
                 except Exception:
                     pass
 
-        # 2. Giriş Log Mesajını Gönderme (Kalıcı Log)
+        # 2. Giriş Log Mesajı (Kalıcı Log Kanalı)
         log_channel = member.guild.get_channel(LOG_CHANNEL_ID)
         if log_channel:
             total_members = member.guild.member_count
@@ -32,7 +47,7 @@ class MemberLogs(commands.Cog):
             except Exception:
                 pass
 
-        # 3. Auto-Ping Mesajı (10 Saniye Sonra Otomatik Silinir)
+        # 3. 10 Saniyelik Auto-Ping Bildirimi
         ping_channel = member.guild.get_channel(AUTOPING_CHANNEL_ID)
         if ping_channel:
             welcome_text = (
@@ -45,7 +60,28 @@ class MemberLogs(commands.Cog):
             except Exception:
                 pass
 
-    # Sunucudan Biri Ayrıldığında
+        # 4. Kalıcı Karşılama Embed Bildirimi
+        welcome_channel = member.guild.get_channel(WELCOME_CHANNEL_ID)
+        if welcome_channel:
+            age_str = calculate_account_age(member.created_at)
+            
+            embed = discord.Embed(
+                description=(
+                    f":dspkus: Yeni Bir Kullanıcı Katıldı, 👋🏻 {member.mention}\n\n"
+                    f"☺️ Sunucumuza Hoş Geldin!\n\n"
+                    f"🙂 Seninle Birlikte {member.guild.member_count} Kişiyiz.\n\n"
+                    f"**Hesap Oluşturulma Tarihi:** {age_str}"
+                ),
+                color=discord.Color.from_rgb(0, 168, 243)
+            )
+            embed.set_thumbnail(url=member.display_avatar.url)
+            
+            mention_content = f"<@&{STAFF_ROLE_ID}>, {member.mention} sunucuya giriş yaptı."
+            try:
+                await welcome_channel.send(content=mention_content, embed=embed)
+            except Exception:
+                pass
+
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
         log_channel = member.guild.get_channel(LOG_CHANNEL_ID)
