@@ -25,6 +25,17 @@ class BotClient(commands.Bot):
         )
 
     async def setup_hook(self):
+        # Global Slash Komut Yetki Denetimi (Yalnızca Yöneticiler)
+        @self.tree.interaction_check
+        async def slash_admin_check(interaction: discord.Interaction) -> bool:
+            if interaction.guild is None:
+                return False
+            if interaction.user.id == interaction.guild.owner_id or interaction.user.guild_permissions.administrator:
+                return True
+            await interaction.response.send_message("❌ Bu komutu kullanabilmek için **Yönetici** yetkisine sahip olmalısınız!", ephemeral=True)
+            return False
+
+        # commands/ klasöründeki cog modüllerini yükle
         commands_dir = os.path.join(os.path.dirname(__file__), "commands")
         if os.path.exists(commands_dir):
             for filename in os.listdir(commands_dir):
@@ -59,6 +70,19 @@ class BotClient(commands.Bot):
 
 bot = BotClient()
 
+# =======================================================
+# 🔒 GLOBAL YÖNETİCİ YETKİ KONTROLÜ (PREFIX KOMUTLARI İÇİN)
+# =======================================================
+@bot.check
+async def prefix_admin_check(ctx: commands.Context):
+    if ctx.guild is None:
+        return False
+    if ctx.author.id == ctx.guild.owner_id or ctx.author.guild_permissions.administrator:
+        return True
+    await ctx.reply("❌ Bu komutu kullanabilmek için **Yönetici** yetkisine sahip olmalısınız!", mention_author=False)
+    return False
+
+
 # ==========================================
 # 📊 MERKEZİ LOG VE RAPORLAMA SİSTEMİ
 # ==========================================
@@ -66,7 +90,6 @@ bot = BotClient()
 # 1. TÜM SLASH ( / ) ETKİLEŞİMLERİNİ YAKALAYIP RAPORLAMA
 @bot.event
 async def on_interaction(interaction: discord.Interaction):
-    # Sadece Slash Komutlarını (ApplicationCommand) yakala
     if interaction.type == discord.InteractionType.application_command:
         cmd_name = interaction.data.get("name", "bilinmeyen-komut")
         
@@ -74,9 +97,12 @@ async def on_interaction(interaction: discord.Interaction):
         if cmd_name.lower() in ["kayıt", "kayit"]:
             return
 
+        # Sadece yöneticiler komut kullanabildiği için yetkisiz denemeleri loglama
+        if not (interaction.user.id == interaction.guild.owner_id or interaction.user.guild_permissions.administrator):
+            return
+
         log_channel = interaction.guild.get_channel(AUDIT_LOG_CHANNEL_ID)
         if log_channel:
-            # Girilen parametreleri ayrıştır
             options = interaction.data.get("options", [])
             params_list = []
             
@@ -84,13 +110,12 @@ async def on_interaction(interaction: discord.Interaction):
                 for opt in opts:
                     if "value" in opt:
                         params_list.append(f"**{opt.get('name')}**: `{opt.get('value')}`")
-                    elif "options" in opt:  # Alt komutlar için
+                    elif "options" in opt:
                         parse_options(opt.get("options"))
                         
             parse_options(options)
             params_str = "\n".join(params_list) if params_list else "Parametre girilmedi"
 
-            # Komuta göre renk belirleme
             if cmd_name in ["yasakla", "at", "sustur"]:
                 embed_color = discord.Color.red()
             elif cmd_name in ["yasaklamakaldır", "susturmakaldır"]:
