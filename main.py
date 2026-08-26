@@ -11,8 +11,11 @@ class BotClient(commands.Bot):
         intents.members = True
         intents.voice_states = True
         
+        # Yalnızca d! ve D! prefixleri tanımlandı
+        prefix = getattr(config, "PREFIX", ["d!", "D!"])
+        
         super().__init__(
-            command_prefix=config.PREFIX,
+            command_prefix=prefix,
             intents=intents,
             help_command=None
         )
@@ -30,7 +33,7 @@ class BotClient(commands.Bot):
                     except Exception as e:
                         print(f"❌ {cog_name} yüklenemedi: {e}")
 
-        # 2. Eski Global komutları temizle (Çift komut sorununu kökten çözer)
+        # 2. Eski Global komutları temizle (Çift komut sorununu çözer)
         self.tree.clear_commands(guild=None)
         await self.tree.sync()
 
