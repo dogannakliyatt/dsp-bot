@@ -20,7 +20,7 @@ class BotClient(commands.Bot):
         )
 
     async def setup_hook(self):
-        # 1. commands/ klasöründeki tüm modülleri yükle
+        # commands/ klasöründeki tüm modülleri yükle
         commands_dir = os.path.join(os.path.dirname(__file__), "commands")
         if os.path.exists(commands_dir):
             for filename in os.listdir(commands_dir):
@@ -32,27 +32,23 @@ class BotClient(commands.Bot):
                     except Exception as e:
                         print(f"❌ {cog_name} yüklenemedi: {e}")
 
-        # 2. Komutları Senkronize Et
-        guild_id = getattr(config, "GUILD_ID", None)
-        if guild_id:
-            # Eski global komutları temizle
-            self.tree.clear_commands(guild=None)
-            await self.tree.sync()
-            
-            # Sunucuya senkronize et
-            guild = discord.Object(id=int(guild_id))
-            self.tree.copy_global_to(guild=guild)
-            synced = await self.tree.sync(guild=guild)
-            print(f"🔄 {len(synced)} adet komut sunucuya ({guild_id}) başarıyla senkronize edildi.")
-        else:
-            # GUILD_ID tanımlı değilse doğrudan global senkronize et
-            synced = await self.tree.sync()
-            print(f"🔄 {len(synced)} adet komut genel olarak senkronize edildi.")
-
     async def on_ready(self):
         print(f"✅ Bot Başarıyla Giriş Yaptı: {self.user} (ID: {self.user.id})")
         print("--------------------------------------------------")
         
+        # 1. Eski Global kopyaları temizle
+        self.tree.clear_commands(guild=None)
+        await self.tree.sync()
+
+        # 2. Bulunduğu tüm sunuculardaki komutları temizleyip tek kopya olarak senkronize et
+        for guild in self.guilds:
+            self.tree.copy_global_to(guild=guild)
+            synced = await self.tree.sync(guild=guild)
+            print(f"🔄 {guild.name} ({guild.id}) sunucusuna {len(synced)} adet komut tekil olarak senkronize edildi.")
+        
+        print("--------------------------------------------------")
+        
+        # Bot Durumu (Aktivite)
         activity = discord.Activity(
             type=discord.ActivityType.watching, 
             name="Demokratik Sol Parti"
