@@ -8,24 +8,38 @@ class CounterCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    def is_authorized(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.guild_permissions.administrator or interaction.user.id == interaction.guild.owner_id:
+            return True
+        return any(role.id == config.AUTHORIZED_ROLE_ID for role in interaction.user.roles)
+
     @app_commands.command(name="kayıttop", description="En çok kayıt yapan yetkilileri listeler.")
     async def kayittop(self, interaction: discord.Interaction):
-        if not any(role.id == config.AUTHORIZED_ROLE_ID for role in interaction.user.roles):
-            return await interaction.response.send_message("Bu komutu kullanmak için gerekli yetkiye sahip değilsiniz.", ephemeral=True)
+        if not self.is_authorized(interaction):
+            return await interaction.response.send_message("❌ Bu komutu kullanmak için gerekli yetkiye sahip değilsiniz.", ephemeral=True)
 
-        rows = database.get_top_staff()
+        try:
+            rows = database.get_top_staff()
+        except Exception as e:
+            return await interaction.response.send_message(f"❌ Veritabanı hatası: {str(e)}", ephemeral=True)
+
         if not rows:
-            return await interaction.response.send_message("Henüz kayıt verisi bulunmuyor.", ephemeral=True)
+            return await interaction.response.send_message("📊 Henüz herhangi bir kayıt verisi bulunmuyor.", ephemeral=True)
 
-        msg = "🏆 **Kayıt Toplamları**\n"
-        idx = 1
-        for staff_id, count in rows[:10]:
+        msg = ""
+        for idx, row in enumerate(rows[:10], start=1):
+            staff_id = row["staff_id"] if isinstance(row, dict) or hasattr(row, "keys") else row[0]
+            count = row["count"] if isinstance(row, dict) or hasattr(row, "keys") else row[1]
+            
             user = interaction.guild.get_member(staff_id)
-            user_str = user.mention if user else f"ID: {staff_id}"
-            msg += f"\t{idx}. {user_str} — {count} kayıt\n"
-            idx += 1
+            user_str = user.mention if user else f"`ID: {staff_id}`"
+            msg += f"**{idx}.** {user_str} — **{count}** kayıt\n"
 
-        embed = discord.Embed(description=msg, color=config.COLOR_HEX)
+        embed = discord.Embed(
+            title="🏆 Kayıt Yetkilisi Sıralaması",
+            description=msg,
+            color=config.COLOR_HEX
+        )
         await interaction.response.send_message(embed=embed)
 
 async def setup(bot):
