@@ -1,172 +1,84 @@
 import discord
-from discord import app_commands
 from discord.ext import commands
+from discord import app_commands
 import config
-import database
-import datetime
 
-class RegisterCommands(commands.Cog):
+class Register(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    PARTI_CHOICES = [
-        app_commands.Choice(name="Genel Başkan (GB)", value="GB"),
-        app_commands.Choice(name="Genel Başkanvekili (GBV)", value="GBV"),
-        app_commands.Choice(name="Parti Genel Sekreteri (PGS)", value="PGS"),
-        app_commands.Choice(name="Merkez Yürütme Kurulu Başkanı (MYKB)", value="MYKB"),
-        app_commands.Choice(name="Onursal Başkan (OB)", value="OB"),
-        app_commands.Choice(name="Genel Başkan Yardımcısı (GBY)", value="GBY"),
-        app_commands.Choice(name="İl Başkanı (İB)", value="İB"),
-        app_commands.Choice(name="Sözcü (SZC)", value="SZC"),
-        app_commands.Choice(name="Gençlik Kolları Başkanı (GKB)", value="GKB"),
-        app_commands.Choice(name="Merkez Yürütme Kurulu Üyesi (MYKÜ)", value="MYKÜ"),
-        app_commands.Choice(name="Üye (Düz Üye)", value="Üye")
-    ]
-
-    RP_CHOICES = [
-        app_commands.Choice(name="Yok", value="Yok"),
-        app_commands.Choice(name="Cumhurbaşkanı (CB)", value="CB"),
-        app_commands.Choice(name="Cumhurbaşkanı Yardımcısı (CBY)", value="CBY"),
-        app_commands.Choice(name="Başbakan (BB)", value="BB"),
-        app_commands.Choice(name="TBMM Başkanı (TBMMB)", value="TBMMB"),
-        app_commands.Choice(name="TBMM Başkanvekili (TBMMBV)", value="TBMMBV"),
-        app_commands.Choice(name="TBMM Kâtibi (TBMMK)", value="TBMMK"),
-        app_commands.Choice(name="T.C. Kabinesi (TCK)", value="TCK"),
-        app_commands.Choice(name="İBB Başkanı (İBB)", value="İBB"),
-        app_commands.Choice(name="ABB Başkanı (ABB)", value="ABB"),
-        app_commands.Choice(name="İZBB Başkanı (İZBB)", value="İZBB"),
-        app_commands.Choice(name="BBB Başkanı (BBB)", value="BBB"),
-        app_commands.Choice(name="Meclis Grup Başkanı (MGB)", value="MGB"),
-        app_commands.Choice(name="Meclis Grup Başkanvekili (MGBV)", value="MGBV"),
-        app_commands.Choice(name="Milletvekili (MV)", value="MV")
-    ]
-
-    def is_authorized(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.guild_permissions.administrator or interaction.user.id == interaction.guild.owner_id:
-            return True
-        return any(role.id == config.AUTHORIZED_ROLE_ID for role in interaction.user.roles)
-
-    @app_commands.command(name="kayıt", description="Yeni kullanıcı kaydı oluşturur.")
+    @app_commands.command(name="kayıt", description="Kullanıcıyı sunucuya ve partiye kaydeder.")
     @app_commands.describe(
-        kullanici="Kayıt edilecek Discord kullanıcısı",
-        isim="Kullanıcının takma adı (Örn: Ahmet)",
-        partimakam="Parti makamı seçiniz",
-        rpmakam="RP makamı seçiniz (Yoksa 'Yok' seçin)"
+        kullanıcı="Kayıt edilecek üye",
+        isim="Kullanıcının adı soyadı",
+        partimakamı="Kullanıcının parti içindeki makamı"
     )
-    @app_commands.choices(partimakam=PARTI_CHOICES, rpmakam=RP_CHOICES)
-    async def kayit(
-        self, 
-        interaction: discord.Interaction, 
-        kullanici: discord.Member, 
-        isim: str, 
-        partimakam: app_commands.Choice[str], 
-        rpmakam: app_commands.Choice[str]
-    ):
-        if not self.is_authorized(interaction):
-            return await interaction.response.send_message("❌ Bu komutu kullanmak için gerekli yetkiye sahip değilsiniz.", ephemeral=True)
+    @app_commands.choices(partimakamı=[
+        app_commands.Choice(name="Üye (Düz)", value="Üye"),
+        app_commands.Choice(name="Genel Başkan", value="GB"),
+        app_commands.Choice(name="Genel Başkan Yardımcısı", value="GBY"),
+        app_commands.Choice(name="Genel Sekreter", value="GS"),
+        app_commands.Choice(name="Parti Meclisi Üyesi", value="PM"),
+        app_commands.Choice(name="Merkez Disiplin Kurulu Üyesi", value="MDK"),
+        app_commands.Choice(name="İl Başkanı", value="İl Bşk."),
+        app_commands.Choice(name="İlçe Başkanı", value="İlçe Bşk."),
+        app_commands.Choice(name="Basın Sözcüsü", value="Sözcü"),
+        app_commands.Choice(name="Danışman", value="Danışman")
+    ])
+    async def kayit(self, interaction: discord.Interaction, kullanıcı: discord.Member, isim: str, partimakamı: app_commands.Choice[str]):
+        # Yetki Kontrolü
+        staff_role_id = getattr(config, "STAFF_ROLE_ID", None)
+        if staff_role_id:
+            staff_role = interaction.guild.get_role(staff_role_id)
+            if staff_role and staff_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
+                await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz yok!", ephemeral=True)
+                return
 
-        # Hiyerarşi kontrolü
-        if kullanici.top_role >= interaction.guild.me.top_role and kullanici.id != self.bot.user.id:
-            if kullanici.id == interaction.guild.owner_id:
-                return await interaction.response.send_message("❌ Sunucu sahibine kayıt işlemi uygulanamaz.", ephemeral=True)
+        await interaction.response.defer()
 
-        roles_to_add = []
-        added_role_names = []
-
-        # 1. ZORUNLU DSP ÜYESİ ROLÜ (1537153933305315328)
-        dsp_uye_role = interaction.guild.get_role(1537153933305315328)
-        if dsp_uye_role and dsp_uye_role not in kullanici.roles:
-            roles_to_add.append(dsp_uye_role)
-            added_role_names.append(dsp_uye_role.name)
-
-        # 2. Seçilen Parti Rolleri
-        parti_role_ids = config.PARTI_ROLES.get(partimakam.value, [])
-        for r_id in parti_role_ids:
-            role = interaction.guild.get_role(r_id)
-            if role and role not in roles_to_add:
-                roles_to_add.append(role)
-                if role.name not in added_role_names:
-                    added_role_names.append(role.name)
-
-        # 3. Seçilen RP Rolleri
-        if rpmakam.value != "Yok":
-            rp_role_ids = config.RP_ROLES.get(rpmakam.value, [])
-            for r_id in rp_role_ids:
-                role = interaction.guild.get_role(r_id)
-                if role and role not in roles_to_add:
-                    roles_to_add.append(role)
-                    if role.name not in added_role_names:
-                        added_role_names.append(role.name)
-
-        # 4. Kayıtsız Rolünü Kaldırma
-        unreg_role = interaction.guild.get_role(config.UNREGISTERED_ROLE_ID)
-        if unreg_role and unreg_role in kullanici.roles:
-            try:
-                await kullanici.remove_roles(unreg_role, reason="Kayıt işlemi tamamlandı.")
-            except Exception:
-                pass
-
-        # 5. Yeni Rolleri Ekleme
-        if roles_to_add:
-            try:
-                await kullanici.add_roles(*roles_to_add, reason=f"Kayıt: {interaction.user}")
-            except Exception:
-                pass
-
-        # Takma Ad Oluşturma (Discord 32 Karakter Limiti Korumalı)
-        if rpmakam.value == "Yok":
-            new_nick = f"{isim} / {partimakam.value}"
+        # İsim Ayarlama Mantığı: Düz üye ise sadece isim, makam varsa İsim / Makam
+        if partimakamı.value.lower() in ["üye", "uye", "düz üye", "duz uye"]:
+            new_nickname = isim
         else:
-            new_nick = f"{isim} / {partimakam.value} / {rpmakam.value}"
-        
-        # 32 karakteri aşarsa kırp
-        new_nick = new_nick[:32]
+            new_nickname = f"{isim} / {partimakamı.value}"
 
         try:
-            await kullanici.edit(nick=new_nick)
+            await kullanıcı.edit(nick=new_nickname)
         except Exception:
             pass
 
-        # Veritabanına Kayıt
-        database.add_register(
-            kullanici.id, kullanici.name, new_nick,
-            partimakam.name, partimakam.value,
-            rpmakam.name, rpmakam.value,
-            ", ".join(added_role_names) if added_role_names else "Roller korundu",
-            interaction.user.id
-        )
+        # Kayıtsız Rolünü Al
+        unreg_role_id = getattr(config, "UNREGISTERED_ROLE_ID", None)
+        if unreg_role_id:
+            unreg_role = interaction.guild.get_role(unreg_role_id)
+            if unreg_role and unreg_role in kullanıcı.roles:
+                try:
+                    await kullanıcı.remove_roles(unreg_role, reason="Kayıt tamamlandı.")
+                except Exception:
+                    pass
 
-        # Kayıt Başarı Mesajı
+        # Üye / Parti Rolünü Ver
+        member_role_id = getattr(config, "MEMBER_ROLE_ID", None)
+        if member_role_id:
+            member_role = interaction.guild.get_role(member_role_id)
+            if member_role:
+                try:
+                    await kullanıcı.add_roles(member_role, reason="Kayıt tamamlandı.")
+                except Exception:
+                    pass
+
+        # Kayıt Bilgi Embed'i
         embed = discord.Embed(
-            title="<:dspkus:1537179044049588284> Kayıt Yapıldı!",
-            color=config.COLOR_HEX
+            title="🕊️ Kayıt Yapıldı!",
+            color=discord.Color.from_rgb(0, 168, 243)
         )
-        embed.description = (
-            f"**• Kayıt Edilen Kullanıcı:** {kullanici.mention}\n"
-            f"**• Kayıt Eden Kullanıcı:** {interaction.user.mention}\n"
-            f"**• Yeni İsim:** `{new_nick}`\n"
-            f"**• Verilen Roller:** {', '.join(added_role_names) if added_role_names else 'Mevcut roller korundu'}"
-        )
-        await interaction.response.send_message(embed=embed)
+        embed.add_field(name="• Kayıt Edilen Kullanıcı", value=kullanıcı.mention, inline=False)
+        embed.add_field(name="• Kayıt Eden Kullanıcı", value=interaction.user.mention, inline=False)
+        embed.add_field(name="• Yeni İsim", value=new_nickname, inline=False)
+        embed.add_field(name="• Verilen Roller", value="DSP Üyesi", inline=False)
+        embed.set_thumbnail(url=kullanıcı.display_avatar.url)
 
-        # Log Kanalına Bildirim
-        log_channel = interaction.guild.get_channel(config.REGISTER_LOG_CHANNEL_ID)
-        if log_channel:
-            log_embed = discord.Embed(
-                title="📋 Yeni Kayıt Logu",
-                color=config.COLOR_HEX,
-                timestamp=datetime.datetime.now(datetime.timezone.utc)
-            )
-            log_embed.add_field(name="Kayıt Edilen Kullanıcı", value=f"{kullanici.mention} (`{kullanici.id}`)", inline=False)
-            log_embed.add_field(name="Kayıt Eden Yetkili", value=f"{interaction.user.mention} (`{interaction.user.id}`)", inline=False)
-            log_embed.add_field(name="Parti Makamı", value=f"{partimakam.name} ({partimakam.value})", inline=True)
-            log_embed.add_field(name="RP Makamı", value=f"{rpmakam.name} ({rpmakam.value})", inline=True)
-            log_embed.add_field(name="Verilen Roller", value=", ".join(added_role_names) if added_role_names else "Rol eklenmedi", inline=False)
-            log_embed.add_field(name="Yeni Discord Takma Adı", value=f"`{new_nick}`", inline=False)
-            try:
-                await log_channel.send(embed=log_embed)
-            except Exception:
-                pass
+        await interaction.followup.send(embed=embed)
 
 async def setup(bot):
-    await bot.add_cog(RegisterCommands(bot))
+    await bot.add_cog(Register(bot))
