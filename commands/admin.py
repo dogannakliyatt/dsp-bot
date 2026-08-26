@@ -9,10 +9,16 @@ class AdminCommands(commands.Cog):
         self.bot = bot
 
     def is_authorized(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.guild_permissions.administrator or interaction.user.id == interaction.guild.owner_id:
+            return True
         return any(role.id == config.AUTHORIZED_ROLE_ID for role in interaction.user.roles)
 
     async def log_admin_action(self, guild, staff, target, action_type, reason, status="Başarılı"):
-        log_channel = guild.get_channel(config.ADMIN_LOG_CHANNEL_ID)
+        channel_id = getattr(config, "ADMIN_LOG_CHANNEL_ID", None)
+        if not channel_id:
+            return
+
+        log_channel = guild.get_channel(channel_id)
         if not log_channel:
             return
 
@@ -27,7 +33,10 @@ class AdminCommands(commands.Cog):
         embed.add_field(name="Durum", value=status, inline=True)
         embed.add_field(name="Sebep", value=reason, inline=False)
         
-        await log_channel.send(embed=embed)
+        try:
+            await log_channel.send(embed=embed)
+        except Exception:
+            pass
 
     @app_commands.command(name="yasakla", description="Kullanıcıyı sunucudan yasaklar.")
     @app_commands.describe(kullanici="Yasaklanacak kullanıcı", sebep="Yasaklama sebebi")
@@ -35,15 +44,18 @@ class AdminCommands(commands.Cog):
         if not self.is_authorized(interaction):
             return await interaction.response.send_message("Bu komutu kullanmak için gerekli yetkiye sahip değilsiniz.", ephemeral=True)
         
-        if kullanici.top_role >= interaction.user.top_role or kullanici.id == self.bot.user.id:
-            return await interaction.response.send_message("Bot bu kullanıcıya işlem uygulayacak yetkiye sahip değil.", ephemeral=True)
+        if kullanici.top_role >= interaction.user.top_role and interaction.user.id != interaction.guild.owner_id:
+            return await interaction.response.send_message("Sizden üst veya eşit roldeki bir kullanıcıya işlem uygulayamazsınız.", ephemeral=True)
+
+        if kullanici.top_role >= interaction.guild.me.top_role or kullanici.id == self.bot.user.id:
+            return await interaction.response.send_message("Botun rolü bu kullanıcıya işlem uygulamaya yetmiyor.", ephemeral=True)
 
         try:
             await kullanici.ban(reason=sebep)
-            await interaction.response.send_message(f"{kullanici.mention} sunucudan yasaklandı. Sebep: {sebep}")
+            await interaction.response.send_message(f"✅ {kullanici.mention} sunucudan yasaklandı. Sebep: {sebep}")
             await self.log_admin_action(interaction.guild, interaction.user, kullanici, "Yasaklama", sebep)
         except Exception as e:
-            await interaction.response.send_message("Hatalı Komut Girişi Yaptınız, Tekrar Deneyiniz.", ephemeral=True)
+            await interaction.response.send_message("İşlem sırasında bir hata oluştu.", ephemeral=True)
             await self.log_admin_action(interaction.guild, interaction.user, kullanici, "Yasaklama", f"Hata: {str(e)}", "Başarısız")
 
     @app_commands.command(name="yasaklamakaldır", description="Kullanıcının yasağını kaldırır.")
@@ -53,12 +65,15 @@ class AdminCommands(commands.Cog):
             return await interaction.response.send_message("Bu komutu kullanmak için gerekli yetkiye sahip değilsiniz.", ephemeral=True)
 
         try:
-            user = await self.bot.fetch_user(int(kullanici_id))
+            user_id = int(kullanici_id.strip())
+            user = await self.bot.fetch_user(user_id)
             await interaction.guild.unban(user, reason=sebep)
-            await interaction.response.send_message(f"{user.mention} yasağı kaldırıldı. Sebep: {sebep}")
+            await interaction.response.send_message(f"✅ {user.mention} (`{user.id}`) kullanıcısının yasağı kaldırıldı. Sebep: {sebep}")
             await self.log_admin_action(interaction.guild, interaction.user, user, "Yasak Kaldırma", sebep)
-        except Exception:
-            await interaction.response.send_message("Kullanıcı bulunamadı veya yasaklı değil.", ephemeral=True)
+        except (ValueError, discord.NotFound):
+            await interaction.response.send_message("Belirtilen ID'ye sahip kullanıcı bulunamadı veya yasaklı değil.", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"Yasak kaldırılırken hata oluştu: {str(e)}", ephemeral=True)
 
     @app_commands.command(name="sustur", description="Kullanıcıyı süreli olarak susturur.")
     @app_commands.describe(kullanici="Susturulacak kullanıcı", sure_dakika="Dakika cinsinden süre", sebep="Susturma sebebi")
@@ -66,13 +81,19 @@ class AdminCommands(commands.Cog):
         if not self.is_authorized(interaction):
             return await interaction.response.send_message("Bu komutu kullanmak için gerekli yetkiye sahip değilsiniz.", ephemeral=True)
 
+        if kullanici.top_role >= interaction.user.top_role and interaction.user.id != interaction.guild.owner_id:
+            return await interaction.response.send_message("Sizden üst veya eşit roldeki bir kullanıcıya işlem uygulayamazsınız.", ephemeral=True)
+
+        if kullanici.top_role >= interaction.guild.me.top_role or kullanici.id == self.bot.user.id:
+            return await interaction.response.send_message("Botun rolü bu kullanıcıyı susturmaya yetmiyor.", ephemeral=True)
+
         duration = datetime.timedelta(minutes=sure_dakika)
         try:
             await kullanici.timeout(duration, reason=sebep)
-            await interaction.response.send_message(f"{kullanici.mention} {sure_dakika} dakika susturuldu. Sebep: {sebep}")
+            await interaction.response.send_message(f"🔇 {kullanici.mention} {sure_dakika} dakika susturuldu. Sebep: {sebep}")
             await self.log_admin_action(interaction.guild, interaction.user, kullanici, f"Susturma ({sure_dakika} dk)", sebep)
         except Exception:
-            await interaction.response.send_message("Bot bu kullanıcıya işlem uygulayacak yetkiye sahip değil.", ephemeral=True)
+            await interaction.response.send_message("Kullanıcı susturulurken bir hata oluştu.", ephemeral=True)
 
     @app_commands.command(name="susturmakaldır", description="Kullanıcının susturmasını kaldırır.")
     @app_commands.describe(kullanici="Susturması kaldırılacak kullanıcı", sebep="Kaldırma sebebi")
@@ -82,10 +103,10 @@ class AdminCommands(commands.Cog):
 
         try:
             await kullanici.timeout(None, reason=sebep)
-            await interaction.response.send_message(f"{kullanici.mention} susturması kaldırıldı.")
+            await interaction.response.send_message(f"🔊 {kullanici.mention} susturması kaldırıldı.")
             await self.log_admin_action(interaction.guild, interaction.user, kullanici, "Susturma Kaldırma", sebep)
         except Exception:
-            await interaction.response.send_message("Hatalı Komut Girişi Yaptınız, Tekrar Deneyiniz.", ephemeral=True)
+            await interaction.response.send_message("Susturma kaldırılırken hata oluştu.", ephemeral=True)
 
     @app_commands.command(name="at", description="Kullanıcıyı sunucudan atar.")
     @app_commands.describe(kullanici="Atılacak kullanıcı", sebep="Atılma sebebi")
@@ -93,12 +114,18 @@ class AdminCommands(commands.Cog):
         if not self.is_authorized(interaction):
             return await interaction.response.send_message("Bu komutu kullanmak için gerekli yetkiye sahip değilsiniz.", ephemeral=True)
 
+        if kullanici.top_role >= interaction.user.top_role and interaction.user.id != interaction.guild.owner_id:
+            return await interaction.response.send_message("Sizden üst veya eşit roldeki bir kullanıcıya işlem uygulayamazsınız.", ephemeral=True)
+
+        if kullanici.top_role >= interaction.guild.me.top_role or kullanici.id == self.bot.user.id:
+            return await interaction.response.send_message("Botun rolü bu kullanıcıyı atmaya yetmiyor.", ephemeral=True)
+
         try:
             await kullanici.kick(reason=sebep)
-            await interaction.response.send_message(f"{kullanici.mention} sunucudan atıldı. Sebep: {sebep}")
+            await interaction.response.send_message(f"👢 {kullanici.mention} sunucudan atıldı. Sebep: {sebep}")
             await self.log_admin_action(interaction.guild, interaction.user, kullanici, "Sunucudan Atma", sebep)
         except Exception:
-            await interaction.response.send_message("Bot bu kullanıcıya işlem uygulayacak yetkiye sahip değil.", ephemeral=True)
+            await interaction.response.send_message("Kullanıcı atılırken bir hata oluştu.", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(AdminCommands(bot))
