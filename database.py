@@ -4,7 +4,6 @@ import os
 DB_NAME = "database.db"
 
 def get_connection():
-    # Kilitlenmeleri (database locked) önlemek için 10 saniye bekleme süresi
     conn = sqlite3.connect(DB_NAME, timeout=10.0)
     conn.row_factory = sqlite3.Row
     return conn
@@ -61,6 +60,20 @@ def add_register(user_id, username, new_nick, parti_name, parti_code, rp_name, r
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (user_id, username, new_nick, parti_name, parti_code, rp_name, rp_code, roles_given, staff_id))
         conn.commit()
+
+def get_top_staff():
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT staff_id, COUNT(*) as count 
+            FROM registers 
+            WHERE staff_id IS NOT NULL 
+            GROUP BY staff_id 
+            ORDER BY count DESC
+        ''')
+        return cursor.fetchall()
+
+# --- OYLAMA SİSTEMİ VERİTABANI İŞLEMLERİ ---
 
 def add_poll(title, channel_id):
     with get_connection() as conn:
@@ -131,5 +144,5 @@ def delete_poll(poll_id):
         cursor.execute("DELETE FROM poll_votes WHERE poll_id = ?", (poll_id,))
         conn.commit()
 
-# Başlatma
+# Otomatik Başlatma
 init_db()
