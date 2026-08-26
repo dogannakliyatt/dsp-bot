@@ -1,66 +1,65 @@
 import os
-import asyncio
-import traceback
 import discord
 from discord.ext import commands
-from flask import Flask
-from threading import Thread
+import config
+from keep_alive import keep_alive
 
-# Web Server (Render Web Service desteği için dinamik port)
-app = Flask(__name__)
+class BotClient(commands.Bot):
+    def __init__(self):
+        intents = discord.Intents.default()
+        intents.message_content = True
+        intents.members = True
+        intents.voice_states = True
+        
+        super().__init__(
+            command_prefix=config.PREFIX,
+            intents=intents,
+            help_command=None
+        )
 
-@app.route('/')
-def home():
-    return "Bot Aktif!", 200
+    async def setup_hook(self):
+        # 1. commands/ klasöründeki tüm modülleri yükle
+        commands_dir = os.path.join(os.path.dirname(__file__), "commands")
+        if os.path.exists(commands_dir):
+            for filename in os.listdir(commands_dir):
+                if filename.endswith(".py") and not filename.startswith("__"):
+                    cog_name = f"commands.{filename[:-3]}"
+                    try:
+                        await self.load_extension(cog_name)
+                        print(f"📦 Yüklendi: {cog_name}")
+                    except Exception as e:
+                        print(f"❌ {cog_name} yüklenemedi: {e}")
 
-def run_flask():
-    # Render'ın atadığı portu al, yoksa 8080 kullan
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
+        # 2. Eski Global komutları temizle (Çift komut sorununu kökten çözer)
+        self.tree.clear_commands(guild=None)
+        await self.tree.sync()
 
-def keep_alive():
-    t = Thread(target=run_flask)
-    t.daemon = True
-    t.start()
+        # 3. Komutları sadece kendi sunucuna özel senkronize et
+        guild = discord.Object(id=config.GUILD_ID)
+        self.tree.copy_global_to(guild=guild)
+        synced = await self.tree.sync(guild=guild)
+        print(f"🔄 {len(synced)} adet komut sunucuya ({config.GUILD_ID}) başarıyla senkronize edildi.")
 
-# Discord Bot Tanımlamaları
-intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
-intents.voice_states = True
+    async def on_ready(self):
+        print(f"✅ Bot Başarıyla Giriş Yaptı: {self.user} (ID: {self.user.id})")
+        print("--------------------------------------------------")
+        
+        # Bot Durumu (Aktivite)
+        activity = discord.Activity(
+            type=discord.ActivityType.watching, 
+            name="Demokratik Sol Parti"
+        )
+        await self.change_presence(status=discord.Status.online, activity=activity)
 
-bot = commands.Bot(command_prefix="!", intents=intents)
-
-@bot.event
-async def on_ready():
-    print(f"✅ {bot.user} olarak giriş yapıldı.")
-    try:
-        synced = await bot.tree.sync()
-        print(f"🔁 {len(synced)} adet slash komutu senkronize edildi.")
-    except Exception as e:
-        print(f"❌ Komutlar senkronize edilirken hata oluştu: {e}")
-
-async def load_extensions():
-    if os.path.exists('./commands'):
-        for filename in os.listdir('./commands'):
-            if filename.endswith('.py') and not filename.startswith('__'):
-                cog_name = f'commands.{filename[:-3]}'
-                try:
-                    await bot.load_extension(cog_name)
-                    print(f"📦 Yüklendi: {cog_name}")
-                except Exception as e:
-                    print(f"❌ {cog_name} yüklenirken HATA oluştu:")
-                    traceback.print_exc()
-
-async def main():
-    keep_alive()
-    async with bot:
-        await load_extensions()
-        token = os.getenv("DISCORD_TOKEN")
-        if not token:
-            print("❌ HATA: DISCORD_TOKEN ortam değişkeni bulunamadı! Render Environment ayarlarını kontrol edin.")
-            return
-        await bot.start(token)
+bot = BotClient()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Render Webhook / 7/24 Keep Alive Sunucusu
+    keep_alive()
+    
+    # Botu Başlat
+    token = getattr(config, "DISCORD_TOKEN", None) or os.getenv("DISCORD_TOKEN")
+    if token:
+        bot.run(token)
+    else:
+        print("❌ HATA: DISCORD_TOKEN bulunamadı! Lütfen config.py veya Environment Variables alanını kontrol edin.")
