@@ -64,12 +64,7 @@ bot = BotClient()
 # 📊 MERKEZİ LOG VE RAPORLAMA SİSTEMİ
 # ==========================================
 
-# 1. TÜM SLASH ( / ) KOMUTLARININ RAPORU
-@bot.tree.error
-async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    # Hata durumunda da sessizce hata logu atabilir veya pas geçebilir
-    pass
-
+# 1. TÜM SLASH KOMUTLARININ RAPORLANMASI
 async def log_app_command(interaction: discord.Interaction, command: app_commands.Command):
     # Kayıt komutu kendi özel kanalına gittiği için hariç tutuldu
     if command.name.lower() in ["kayıt", "kayit"]:
@@ -87,17 +82,30 @@ async def log_app_command(interaction: discord.Interaction, command: app_command
         val = opt.get("value", "")
         params_list.append(f"**{name}**: `{val}`")
     
-    params_str = ", ".join(params_list) if params_list else "Parametre yok"
+    params_str = "\n".join(params_list) if params_list else "Parametre girilmedi"
+
+    # Moderasyon / Ceza komutlarına göre renk ayarı
+    cmd_name = command.name.lower()
+    if cmd_name in ["yasakla", "at", "sustur"]:
+        embed_color = discord.Color.red()
+    elif cmd_name in ["yasaklamakaldır", "susturmakaldır"]:
+        embed_color = discord.Color.green()
+    elif "oylama" in cmd_name:
+        embed_color = discord.Color.purple()
+    elif cmd_name in ["çekiliş", "katıl"]:
+        embed_color = discord.Color.gold()
+    else:
+        embed_color = discord.Color.from_rgb(0, 168, 243)
 
     embed = discord.Embed(
-        title="⚡ Slash Komutu Kullanıldı",
-        color=discord.Color.from_rgb(0, 168, 243),
+        title="⚡ Komut İşlemi Raporlandı",
+        color=embed_color,
         timestamp=datetime.datetime.now(datetime.timezone.utc)
     )
     embed.add_field(name="• Komut", value=f"`/{command.name}`", inline=True)
-    embed.add_field(name="• Kullanan Yetkili", value=interaction.user.mention, inline=True)
+    embed.add_field(name="• Yetkili / Kullanıcı", value=interaction.user.mention, inline=True)
     embed.add_field(name="• Kanal", value=interaction.channel.mention if interaction.channel else "Bilinmiyor", inline=True)
-    embed.add_field(name="• Girilen Detaylar", value=params_str, inline=False)
+    embed.add_field(name="• Girilen Bilgiler / Parametreler", value=params_str, inline=False)
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
     embed.set_footer(text=f"Kullanıcı ID: {interaction.user.id}")
 
@@ -106,11 +114,10 @@ async def log_app_command(interaction: discord.Interaction, command: app_command
     except Exception:
         pass
 
-# Komut başarıyla tamamlandığında tetiklenir
 bot.tree.on_app_command_completion = log_app_command
 
 
-# 2. TÜM PREFIX ( d! / D! ) KOMUTLARININ RAPORU (Örn: d!sil)
+# 2. TÜM PREFIX ( d! / D! ) KOMUTLARININ RAPORLANMASI
 @bot.event
 async def on_command_completion(ctx: commands.Context):
     log_channel = ctx.guild.get_channel(AUDIT_LOG_CHANNEL_ID)
@@ -128,9 +135,9 @@ async def on_command_completion(ctx: commands.Context):
         timestamp=datetime.datetime.now(datetime.timezone.utc)
     )
     embed.add_field(name="• Komut", value=f"`{ctx.prefix}{ctx.command.name}`", inline=True)
-    embed.add_field(name="• Kullanan Yetkili", value=ctx.author.mention, inline=True)
+    embed.add_field(name="• Yetkili", value=ctx.author.mention, inline=True)
     embed.add_field(name="• Kanal", value=ctx.channel.mention, inline=True)
-    embed.add_field(name="• Girilen Değerler", value=args_str, inline=False)
+    embed.add_field(name="• Girilen Değerler", value=f"`{args_str}`", inline=False)
     embed.set_thumbnail(url=ctx.author.display_avatar.url)
     embed.set_footer(text=f"Kullanıcı ID: {ctx.author.id}")
 
@@ -154,7 +161,7 @@ async def on_bulk_message_delete(messages):
     embed = discord.Embed(
         title="🗑️ Toplu Mesaj Silindi",
         description=f"{channel.mention} kanalında toplam **{len(messages)}** adet mesaj temizlendi.",
-        color=discord.Color.red(),
+        color=discord.Color.dark_red(),
         timestamp=datetime.datetime.now(datetime.timezone.utc)
     )
     embed.set_footer(text=f"Kanal ID: {channel.id}")
