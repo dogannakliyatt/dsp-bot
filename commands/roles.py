@@ -121,12 +121,12 @@ class RoleManagement(commands.Cog):
         embed.set_footer(text=f"İşlemi Yapan: {interaction.user.display_name}")
         await interaction.followup.send(embed=embed)
 
-    # ------------------ d!rolver / D!rolver METİN KOMUTU ------------------
-    @commands.command(name="rolver", aliases=["Rolver", "ROLVER"])
+    # ------------------ d!rolver / D!rolver / d!rol / D!rol METİN KOMUTU ------------------
+    @commands.command(name="rolver", aliases=["Rolver", "ROLVER", "rol", "Rol", "ROL"])
     async def rolver_prefix(self, ctx: commands.Context, kullanıcı: discord.Member = None, role: discord.Role = None):
         if kullanıcı is None or role is None:
             await ctx.reply(
-                "❌ **Hatalı Kullanım!**\nDoğru format: `d!rolver @kullanıcı @rol` veya `D!rolver @kullanıcı @rol`",
+                "❌ **Hatalı Kullanım!**\nDoğru format: `d!rol @kullanıcı @rol` veya `D!rolver @kullanıcı @rol`",
                 mention_author=False
             )
             return
