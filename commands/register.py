@@ -4,9 +4,11 @@ from discord import app_commands
 import datetime
 import config
 
-# Taban Üye Rolü ve Kayıt Log Kanalı ID'si
+# Roller ve Kanallar
 BASE_MEMBER_ROLE_ID = 1537153933305315328
+UNREGISTERED_ROLE_ID = 1537154022497329233
 REGISTRATION_LOG_CHANNEL_ID = 1537159620374564875
+REPORT_LOG_CHANNEL_ID = 1541807577837342834
 
 # Parti Makam Rol Eşleşmeleri
 PARTY_ROLES = {
@@ -46,6 +48,7 @@ class Register(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    # ------------------ /kayıt KOMUTU ------------------
     @app_commands.command(name="kayıt", description="Kullanıcıyı partiye ve makamlarına kaydeder.")
     @app_commands.describe(
         kullanıcı="Kayıt edilecek üye",
@@ -105,7 +108,6 @@ class Register(commands.Cog):
         p_val = partimakamı.value
         r_val = rpmakamı.value
 
-        # İsim / Takma Ad Düzenleme
         titles = []
         if p_val != "Üye":
             titles.append(p_val)
@@ -113,58 +115,46 @@ class Register(commands.Cog):
             titles.append(r_val)
 
         new_nickname = f"{isim} / {' / '.join(titles)}" if titles else isim
-
         if len(new_nickname) > 32:
             new_nickname = new_nickname[:32]
 
         try:
             await kullanıcı.edit(nick=new_nickname)
-        except Exception as e:
-            print(f"Takma ad güncellenemedi: {e}")
+        except Exception:
+            pass
 
-        # Kayıtsız Rolünü Kaldırma
-        unreg_role_id = getattr(config, "UNREGISTERED_ROLE_ID", None)
-        if unreg_role_id:
-            unreg_role = interaction.guild.get_role(unreg_role_id)
-            if unreg_role and unreg_role in kullanıcı.roles:
-                try:
-                    await kullanıcı.remove_roles(unreg_role, reason="Kayıt tamamlandı.")
-                except Exception as e:
-                    print(f"Kayıtsız rolü kaldırılamadı: {e}")
+        unreg_role = interaction.guild.get_role(UNREGISTERED_ROLE_ID)
+        if unreg_role and unreg_role in kullanıcı.roles:
+            try:
+                await kullanıcı.remove_roles(unreg_role, reason="Kayıt tamamlandı.")
+            except Exception:
+                pass
 
-        # Rolleri Belirleme
         roles_to_add = set()
-        
-        # Taban Rol (DSP Üyesi)
         base_role = interaction.guild.get_role(BASE_MEMBER_ROLE_ID)
         if base_role:
             roles_to_add.add(base_role)
 
-        # Parti Makam Rolleri
         for r_id in PARTY_ROLES.get(p_val, []):
             role_obj = interaction.guild.get_role(r_id)
             if role_obj:
                 roles_to_add.add(role_obj)
 
-        # RP Makam Rolleri
         for r_id in RP_ROLES.get(r_val, []):
             role_obj = interaction.guild.get_role(r_id)
             if role_obj:
                 roles_to_add.add(role_obj)
 
-        # Rolleri Kullanıcıya Ekleme
         if roles_to_add:
             try:
                 await kullanıcı.add_roles(*list(roles_to_add), reason=f"Kayıt: {partimakamı.name} | {rpmakamı.name}")
-            except Exception as e:
-                print(f"Roller verilemedi: {e}")
+            except Exception:
+                pass
 
-        # Verilen Roller Metni Hazırlığı
         role_names = [r.name for r in roles_to_add if r.id != BASE_MEMBER_ROLE_ID]
         roles_text_list = ["DSP Üyesi"] + role_names
         roles_text = ", ".join(dict.fromkeys(roles_text_list))
 
-        # İstenen Görsel Formatındaki Embed
         embed_desc = (
             f"**Kayıt Edilen Kullanıcı**\n"
             f"{kullanıcı.mention} ( `{kullanıcı.id}` )\n\n"
@@ -188,25 +178,114 @@ class Register(commands.Cog):
             timestamp=datetime.datetime.now(datetime.timezone.utc)
         )
 
-        # 1. Komutun yazıldığı kanala yanıt ver
         await interaction.followup.send(embed=embed)
 
-        # 2. 1537159620374564875 ID'li Log Kanalına Gönder
         log_channel = interaction.guild.get_channel(REGISTRATION_LOG_CHANNEL_ID)
         if log_channel is None:
             try:
                 log_channel = await interaction.guild.fetch_channel(REGISTRATION_LOG_CHANNEL_ID)
-            except Exception as e:
-                print(f"[HATA] Kayıt log kanalı bulunamadı/fetch edilemedi (ID: {REGISTRATION_LOG_CHANNEL_ID}): {e}")
+            except Exception:
+                pass
 
         if log_channel and log_channel.id != interaction.channel_id:
             try:
                 await log_channel.send(embed=embed)
-                print(f"[BAŞARILI] Kayıt logu #{log_channel.name} kanalına atıldı.")
-            except discord.Forbidden:
-                print(f"[HATA] Botun #{log_channel.name} kanalına mesaj gönderme veya Embed bağlantısı izni yok!")
             except Exception as e:
-                print(f"[HATA] Log gönderilirken hata oluştu: {e}")
+                print(f"[HATA] Kayıt log gönderilemedi: {e}")
+
+    # ------------------ /kayıtsızver KOMUTU ------------------
+    @app_commands.command(name="kayıtsızver", description="Kullanıcının tüm rollerini ve takma adını sıfırlayıp kayıtsıza atar.")
+    @app_commands.describe(
+        kullanıcı="Kayıtsıza atılacak kullanıcı",
+        sebep="Kayıtsıza atılma sebebi"
+    )
+    async def kayitsizver(
+        self,
+        interaction: discord.Interaction,
+        kullanıcı: discord.Member,
+        sebep: str
+    ):
+        staff_role_id = getattr(config, "STAFF_ROLE_ID", None)
+        if staff_role_id:
+            staff_role = interaction.guild.get_role(staff_role_id)
+            if staff_role and staff_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
+                await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz yok!", ephemeral=True)
+                return
+
+        await interaction.response.defer()
+
+        # Botun rol hiyerarşisi kontrolü
+        if kullanıcı.top_role >= interaction.guild.me.top_role:
+            await interaction.followup.send("❌ Bu kullanıcının rolü botun rolünden yüksek veya eşit olduğu için işlem yapılamaz!", ephemeral=True)
+            return
+
+        unreg_role = interaction.guild.get_role(UNREGISTERED_ROLE_ID)
+        if not unreg_role:
+            await interaction.followup.send("❌ Kayıtsız rolü sunucuda bulunamadı!", ephemeral=True)
+            return
+
+        # 1. Takma adı (sunucu içi ismi) varsa sıfırla
+        if kullanıcı.nick:
+            try:
+                await kullanıcı.edit(nick=None, reason=f"Kayıtsıza atıldı: {sebep}")
+            except Exception as e:
+                print(f"Takma ad sıfırlanırken hata: {e}")
+
+        # 2. Alınacak rolleri belirle (@everyone ve bot/entegrasyon rolleri hariç)
+        roles_to_remove = [r for r in kullanıcı.roles if r != interaction.guild.default_role and not r.is_integration() and not r.is_bot_managed()]
+
+        # 3. Rolleri al
+        if roles_to_remove:
+            try:
+                await kullanıcı.remove_roles(*roles_to_remove, reason=f"Kayıtsıza atıldı: {sebep}")
+            except Exception as e:
+                print(f"Roller alınırken hata: {e}")
+
+        # 4. Kayıtsız rolünü ver
+        try:
+            await kullanıcı.add_roles(unreg_role, reason=f"Kayıtsıza atıldı: {sebep}")
+        except Exception as e:
+            print(f"Kayıtsız rolü verilirken hata: {e}")
+
+        # 5. Komut kanalına yanıt Embed'i
+        reply_embed = discord.Embed(
+            title="⚠️ Kullanıcı Kayıtsıza Atıldı",
+            description=(
+                f"{kullanıcı.mention} kullanıcısının tüm rolleri alındı, takma adı sıfırlandı ve {unreg_role.mention} rolü verildi.\n\n"
+                f"**Sebep:** {sebep}"
+            ),
+            color=discord.Color.orange(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc)
+        )
+        reply_embed.set_footer(text=f"İşlemi Yapan: {interaction.user.display_name}")
+        await interaction.followup.send(embed=reply_embed)
+
+        # 6. 1541807577837342834 ID'li Raporlama Kanalına Rapor Logu Gönder
+        report_channel = interaction.guild.get_channel(REPORT_LOG_CHANNEL_ID)
+        if report_channel is None:
+            try:
+                report_channel = await interaction.guild.fetch_channel(REPORT_LOG_CHANNEL_ID)
+            except Exception:
+                pass
+
+        if report_channel:
+            report_embed = discord.Embed(
+                title="📑 Kayıtsıza Atma Raporu",
+                color=discord.Color.red(),
+                timestamp=datetime.datetime.now(datetime.timezone.utc)
+            )
+            report_embed.add_field(name="👤 Kullanıcı", value=f"{kullanıcı.mention} (`{kullanıcı.id}`)", inline=False)
+            report_embed.add_field(name="🛡️ Yetkili", value=f"{interaction.user.mention} (`{interaction.user.id}`)", inline=False)
+            report_embed.add_field(name="📝 Sebep", value=sebep, inline=False)
+            report_embed.set_thumbnail(url=kullanıcı.display_avatar.url)
+            report_embed.set_footer(text=f"Kullanıcı ID: {kullanıcı.id}")
+
+            try:
+                await report_channel.send(embed=report_embed)
+            except discord.Forbidden:
+                print(f"[HATA] Botun #{report_channel.name} raporlama kanalına mesaj atma yetkisi yok!")
+            except Exception as e:
+                print(f"[HATA] Rapor log gönderilemedi: {e}")
 
 async def setup(bot):
     await bot.add_cog(Register(bot))
