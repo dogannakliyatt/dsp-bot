@@ -36,16 +36,14 @@ class BotClient(commands.Bot):
         print(f"✅ Bot Başarıyla Giriş Yaptı: {self.user} (ID: {self.user.id})")
         print("--------------------------------------------------")
         
-        # 1. Eski Global kopyaları temizle
-        self.tree.clear_commands(guild=None)
-        await self.tree.sync()
-
-        # 2. Bulunduğu tüm sunuculardaki komutları temizleyip tek kopya olarak senkronize et
+        # 1. Eski sunucu-özel (Guild) artıklarını temizle
         for guild in self.guilds:
-            self.tree.copy_global_to(guild=guild)
-            synced = await self.tree.sync(guild=guild)
-            print(f"🔄 {guild.name} ({guild.id}) sunucusuna {len(synced)} adet komut tekil olarak senkronize edildi.")
-        
+            self.tree.clear_commands(guild=guild)
+            await self.tree.sync(guild=guild)
+
+        # 2. Komutları doğrudan Global olarak senkronize et
+        synced = await self.tree.sync()
+        print(f"🔄 {len(synced)} adet komut başarıyla senkronize edildi.")
         print("--------------------------------------------------")
         
         # Bot Durumu (Aktivite)
