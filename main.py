@@ -6,22 +6,24 @@ from discord.ext import commands
 from flask import Flask
 from threading import Thread
 
-# Web Server (Render pings)
-app = Flask('')
+# Web Server (Render Web Service desteği için dinamik port)
+app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Bot Aktif!"
+    return "Bot Aktif!", 200
 
 def run_flask():
-    app.run(host='0.0.0.0', port=8080)
+    # Render'ın atadığı portu al, yoksa 8080 kullan
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
     t = Thread(target=run_flask)
     t.daemon = True
     t.start()
 
-# Discord Bot
+# Discord Bot Tanımlamaları
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -41,7 +43,7 @@ async def on_ready():
 async def load_extensions():
     if os.path.exists('./commands'):
         for filename in os.listdir('./commands'):
-            if filename.endswith('.py'):
+            if filename.endswith('.py') and not filename.startswith('__'):
                 cog_name = f'commands.{filename[:-3]}'
                 try:
                     await bot.load_extension(cog_name)
@@ -56,7 +58,7 @@ async def main():
         await load_extensions()
         token = os.getenv("DISCORD_TOKEN")
         if not token:
-            print("❌ HATA: DISCORD_TOKEN bulunamadı!")
+            print("❌ HATA: DISCORD_TOKEN ortam değişkeni bulunamadı! Render Environment ayarlarını kontrol edin.")
             return
         await bot.start(token)
 
