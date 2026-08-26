@@ -11,21 +11,27 @@ class Register(commands.Cog):
     @app_commands.describe(
         kullanıcı="Kayıt edilecek üye",
         isim="Kullanıcının adı soyadı",
-        partimakamı="Kullanıcının parti içindeki makamı"
+        rpmakamı="Kullanıcının parti/RP içindeki makamı"
     )
-    @app_commands.choices(partimakamı=[
-        app_commands.Choice(name="Üye (Düz)", value="Üye"),
-        app_commands.Choice(name="Genel Başkan", value="GB"),
-        app_commands.Choice(name="Genel Başkan Yardımcısı", value="GBY"),
-        app_commands.Choice(name="Genel Sekreter", value="GS"),
-        app_commands.Choice(name="Parti Meclisi Üyesi", value="PM"),
-        app_commands.Choice(name="Merkez Disiplin Kurulu Üyesi", value="MDK"),
+    @app_commands.choices(rpmakamı=[
+        app_commands.Choice(name="Üye (Düz Üyelik)", value="Üye"),
+        app_commands.Choice(name="Genel Başkan (GB)", value="GB"),
+        app_commands.Choice(name="Genel Başkan Yardımcısı (GBY)", value="GBY"),
+        app_commands.Choice(name="Genel Sekreter (GS)", value="GS"),
+        app_commands.Choice(name="Parti Meclisi Üyesi (PM)", value="PM"),
+        app_commands.Choice(name="Merkez Disiplin Kurulu (MDK)", value="MDK"),
         app_commands.Choice(name="İl Başkanı", value="İl Bşk."),
         app_commands.Choice(name="İlçe Başkanı", value="İlçe Bşk."),
         app_commands.Choice(name="Basın Sözcüsü", value="Sözcü"),
         app_commands.Choice(name="Danışman", value="Danışman")
     ])
-    async def kayit(self, interaction: discord.Interaction, kullanıcı: discord.Member, isim: str, partimakamı: app_commands.Choice[str]):
+    async def kayit(
+        self, 
+        interaction: discord.Interaction, 
+        kullanıcı: discord.Member, 
+        isim: str, 
+        rpmakamı: app_commands.Choice[str]
+    ):
         # Yetki Kontrolü
         staff_role_id = getattr(config, "STAFF_ROLE_ID", None)
         if staff_role_id:
@@ -36,11 +42,12 @@ class Register(commands.Cog):
 
         await interaction.response.defer()
 
-        # İsim Ayarlama Mantığı: Düz üye ise sadece isim, makam varsa İsim / Makam
-        if partimakamı.value.lower() in ["üye", "uye", "düz üye", "duz uye"]:
+        # İsim Mantığı: Düz üye seçildiyse unvan ekleme, makam varsa İsim / Makam
+        secilen_makam = rpmakamı.value
+        if secilen_makam.lower() in ["üye", "uye", "düz üye", "duz uye"]:
             new_nickname = isim
         else:
-            new_nickname = f"{isim} / {partimakamı.value}"
+            new_nickname = f"{isim} / {secilen_makam}"
 
         try:
             await kullanıcı.edit(nick=new_nickname)
