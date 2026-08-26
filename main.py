@@ -25,7 +25,6 @@ class BotClient(commands.Bot):
         )
 
     async def setup_hook(self):
-        # commands/ klasöründeki tüm modülleri yükle
         commands_dir = os.path.join(os.path.dirname(__file__), "commands")
         if os.path.exists(commands_dir):
             for filename in os.listdir(commands_dir):
@@ -64,57 +63,63 @@ bot = BotClient()
 # 📊 MERKEZİ LOG VE RAPORLAMA SİSTEMİ
 # ==========================================
 
-# 1. TÜM SLASH KOMUTLARININ RAPORLANMASI
-async def log_app_command(interaction: discord.Interaction, command: app_commands.Command):
-    # Kayıt komutu kendi özel kanalına gittiği için hariç tutuldu
-    if command.name.lower() in ["kayıt", "kayit"]:
-        return
+# 1. TÜM SLASH ( / ) ETKİLEŞİMLERİNİ YAKALAYIP RAPORLAMA
+@bot.event
+async def on_interaction(interaction: discord.Interaction):
+    # Sadece Slash Komutlarını (ApplicationCommand) yakala
+    if interaction.type == discord.InteractionType.application_command:
+        cmd_name = interaction.data.get("name", "bilinmeyen-komut")
+        
+        # Kayıt komutu hariç tutuldu
+        if cmd_name.lower() in ["kayıt", "kayit"]:
+            return
 
-    log_channel = interaction.guild.get_channel(AUDIT_LOG_CHANNEL_ID)
-    if not log_channel:
-        return
+        log_channel = interaction.guild.get_channel(AUDIT_LOG_CHANNEL_ID)
+        if log_channel:
+            # Girilen parametreleri ayrıştır
+            options = interaction.data.get("options", [])
+            params_list = []
+            
+            def parse_options(opts):
+                for opt in opts:
+                    if "value" in opt:
+                        params_list.append(f"**{opt.get('name')}**: `{opt.get('value')}`")
+                    elif "options" in opt:  # Alt komutlar için
+                        parse_options(opt.get("options"))
+                        
+            parse_options(options)
+            params_str = "\n".join(params_list) if params_list else "Parametre girilmedi"
 
-    # Girilen parametreleri topla
-    options = interaction.data.get("options", [])
-    params_list = []
-    for opt in options:
-        name = opt.get("name", "")
-        val = opt.get("value", "")
-        params_list.append(f"**{name}**: `{val}`")
-    
-    params_str = "\n".join(params_list) if params_list else "Parametre girilmedi"
+            # Komuta göre renk belirleme
+            if cmd_name in ["yasakla", "at", "sustur"]:
+                embed_color = discord.Color.red()
+            elif cmd_name in ["yasaklamakaldır", "susturmakaldır"]:
+                embed_color = discord.Color.green()
+            elif "oylama" in cmd_name:
+                embed_color = discord.Color.purple()
+            elif cmd_name in ["çekiliş", "katıl"]:
+                embed_color = discord.Color.gold()
+            elif cmd_name in ["mesajsil", "sil"]:
+                embed_color = discord.Color.dark_red()
+            else:
+                embed_color = discord.Color.from_rgb(0, 168, 243)
 
-    # Moderasyon / Ceza komutlarına göre renk ayarı
-    cmd_name = command.name.lower()
-    if cmd_name in ["yasakla", "at", "sustur"]:
-        embed_color = discord.Color.red()
-    elif cmd_name in ["yasaklamakaldır", "susturmakaldır"]:
-        embed_color = discord.Color.green()
-    elif "oylama" in cmd_name:
-        embed_color = discord.Color.purple()
-    elif cmd_name in ["çekiliş", "katıl"]:
-        embed_color = discord.Color.gold()
-    else:
-        embed_color = discord.Color.from_rgb(0, 168, 243)
+            embed = discord.Embed(
+                title="⚡ Slash Komutu Kullanıldı",
+                color=embed_color,
+                timestamp=datetime.datetime.now(datetime.timezone.utc)
+            )
+            embed.add_field(name="• Komut", value=f"`/{cmd_name}`", inline=True)
+            embed.add_field(name="• Yetkili / Kullanıcı", value=interaction.user.mention, inline=True)
+            embed.add_field(name="• Kanal", value=interaction.channel.mention if interaction.channel else "Bilinmiyor", inline=True)
+            embed.add_field(name="• Girilen Bilgiler", value=params_str, inline=False)
+            embed.set_thumbnail(url=interaction.user.display_avatar.url)
+            embed.set_footer(text=f"Kullanıcı ID: {interaction.user.id}")
 
-    embed = discord.Embed(
-        title="⚡ Komut İşlemi Raporlandı",
-        color=embed_color,
-        timestamp=datetime.datetime.now(datetime.timezone.utc)
-    )
-    embed.add_field(name="• Komut", value=f"`/{command.name}`", inline=True)
-    embed.add_field(name="• Yetkili / Kullanıcı", value=interaction.user.mention, inline=True)
-    embed.add_field(name="• Kanal", value=interaction.channel.mention if interaction.channel else "Bilinmiyor", inline=True)
-    embed.add_field(name="• Girilen Bilgiler / Parametreler", value=params_str, inline=False)
-    embed.set_thumbnail(url=interaction.user.display_avatar.url)
-    embed.set_footer(text=f"Kullanıcı ID: {interaction.user.id}")
-
-    try:
-        await log_channel.send(embed=embed)
-    except Exception:
-        pass
-
-bot.tree.on_app_command_completion = log_app_command
+            try:
+                await log_channel.send(embed=embed)
+            except Exception:
+                pass
 
 
 # 2. TÜM PREFIX ( d! / D! ) KOMUTLARININ RAPORLANMASI
