@@ -11,7 +11,6 @@ class BotClient(commands.Bot):
         intents.members = True
         intents.voice_states = True
         
-        # Yalnızca d! ve D! prefixleri tanımlandı
         prefix = getattr(config, "PREFIX", ["d!", "D!"])
         
         super().__init__(
@@ -33,21 +32,27 @@ class BotClient(commands.Bot):
                     except Exception as e:
                         print(f"❌ {cog_name} yüklenemedi: {e}")
 
-        # 2. Eski Global komutları temizle (Çift komut sorununu çözer)
-        self.tree.clear_commands(guild=None)
-        await self.tree.sync()
-
-        # 3. Komutları sadece kendi sunucuna özel senkronize et
-        guild = discord.Object(id=config.GUILD_ID)
-        self.tree.copy_global_to(guild=guild)
-        synced = await self.tree.sync(guild=guild)
-        print(f"🔄 {len(synced)} adet komut sunucuya ({config.GUILD_ID}) başarıyla senkronize edildi.")
+        # 2. Komutları Senkronize Et
+        guild_id = getattr(config, "GUILD_ID", None)
+        if guild_id:
+            # Eski global komutları temizle
+            self.tree.clear_commands(guild=None)
+            await self.tree.sync()
+            
+            # Sunucuya senkronize et
+            guild = discord.Object(id=int(guild_id))
+            self.tree.copy_global_to(guild=guild)
+            synced = await self.tree.sync(guild=guild)
+            print(f"🔄 {len(synced)} adet komut sunucuya ({guild_id}) başarıyla senkronize edildi.")
+        else:
+            # GUILD_ID tanımlı değilse doğrudan global senkronize et
+            synced = await self.tree.sync()
+            print(f"🔄 {len(synced)} adet komut genel olarak senkronize edildi.")
 
     async def on_ready(self):
         print(f"✅ Bot Başarıyla Giriş Yaptı: {self.user} (ID: {self.user.id})")
         print("--------------------------------------------------")
         
-        # Bot Durumu (Aktivite)
         activity = discord.Activity(
             type=discord.ActivityType.watching, 
             name="Demokratik Sol Parti"
