@@ -11,7 +11,7 @@ TARGET_ROLE_ID = 1537153933305315328
 # --- OY VERME VE ONAY VIEW BİLEŞENLERİ ---
 
 class OyOnayView(discord.ui.View):
-    def __init__(self, poll_id, candidate_id, candidate_name, poll_title):
+    def __init__(self, poll_id: int, candidate_id: int, candidate_name: str, poll_title: str):
         super().__init__(timeout=60)
         self.poll_id = poll_id
         self.candidate_id = candidate_id
@@ -21,7 +21,7 @@ class OyOnayView(discord.ui.View):
     @discord.ui.button(label="Evet, Oy Ver", style=discord.ButtonStyle.green, custom_id="btn_evet_oy")
     async def evet_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
         if database.has_voted(self.poll_id, interaction.user.id):
-            return await interaction.response.send_message("❌ Zaten bu oylamada oy kullandınız! Oyunuz değiştirilemez.", ephemeral=True)
+            return await interaction.response.edit_message(content="❌ Zaten bu oylamada oy kullandınız! Oyunuz değiştirilemez.", view=None)
 
         success = database.cast_vote(self.poll_id, interaction.user.id, self.candidate_id)
         if success:
@@ -38,23 +38,35 @@ class OyOnayView(discord.ui.View):
                 log_embed.add_field(name="Oy Veren Kullanıcı", value=f"{interaction.user.mention} (`{interaction.user.id}`)", inline=False)
                 log_embed.add_field(name="Oylama Başlığı", value=self.poll_title, inline=False)
                 log_embed.add_field(name="Verilen Oy (Aday)", value=f"**{self.candidate_name}**", inline=False)
-                await log_channel.send(embed=log_embed)
+                try:
+                    await log_channel.send(embed=log_embed)
+                except Exception:
+                    pass
         else:
-            await interaction.response.edit_message(content="❌ Oy kaydı sırasında bir hata oluştu.", view=None)
+            await interaction.response.edit_message(content="❌ Oy kaydı sırasında bir hata oluştu veya zaten oy kullandınız.", view=None)
 
     @discord.ui.button(label="Hayır, İptal Et", style=discord.ButtonStyle.red, custom_id="btn_hayir_oy")
     async def hayir_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Onay mesajını doğrudan düzenler ve butonları kaldırır
         await interaction.response.edit_message(content="Oy verme işlemi iptal edildi.", view=None)
 
 
 class AdaySelect(discord.ui.Select):
-    def __init__(self, poll_id, candidates, poll_title):
+    def __init__(self, poll_id: int, candidates: list, poll_title: str):
         options = [
-            discord.SelectOption(label=c[1], value=str(c[0]), description=f"{c[1]} için oy ver")
+            discord.SelectOption(
+                label=str(c["name"] if hasattr(c, "keys") else c[1]),
+                value=str(c["candidate_id"] if hasattr(c, "keys") else c[0]),
+                description=f"{c['name'] if hasattr(c, 'keys') else c[1]} için oy ver"
+            )
             for c in candidates
         ]
-        super().__init__(placeholder="Oy vermek istediğiniz adayı seçin...", min_values=1, max_values=1, options=options)
+        super().__init__(
+            placeholder="Oy vermek istediğiniz adayı seçin...",
+            min_values=1,
+            max_values=1,
+            options=options,
+            custom_id=f"poll_select_{poll_id}"
+        )
         self.poll_id = poll_id
         self.poll_title = poll_title
 
@@ -64,13 +76,23 @@ class AdaySelect(discord.ui.Select):
 
         selected_candidate_id = int(self.values[0])
         candidates = database.get_candidates(self.poll_id)
-        candidate_name = next((c[1] for c in candidates if c[0] == selected_candidate_id), "Bilinmeyen Aday")
+        
+        candidate_name = "Bilinmeyen Aday"
+        for c in candidates:
+            c_id = c["candidate_id"] if hasattr(c, "keys") else c[0]
+            c_name = c["name"] if hasattr(c, "keys") else c[1]
+            if c_id == selected_candidate_id:
+                candidate_name = c_name
+                break
 
-        # Seçim yapıldıktan sonra ana menüdeki seçimi sıfırlamak için View'ı yeniden güncelliyoruz
+        # Seçim arayüzünü yenile
         reset_view = OylamaView(self.poll_id, self.poll_title)
-        await interaction.response.edit_message(view=reset_view)
+        try:
+            await interaction.response.edit_message(view=reset_view)
+        except Exception:
+            pass
 
-        # Kullanıcıya onay penceresini gizli (ephemeral) olarak gönderiyoruz
+        # Kullanıcıya onay penceresi gönder
         view = OyOnayView(self.poll_id, selected_candidate_id, candidate_name, self.poll_title)
         await interaction.followup.send(
             content=f"**{candidate_name}** isimli adaya oy vermek istediğinize emin misiniz?",
@@ -80,7 +102,7 @@ class AdaySelect(discord.ui.Select):
 
 
 class OylamaView(discord.ui.View):
-    def __init__(self, poll_id, poll_title):
+    def __init__(self, poll_id: int, poll_title: str):
         super().__init__(timeout=None)
         self.poll_id = poll_id
         self.poll_title = poll_title
@@ -90,7 +112,7 @@ class OylamaView(discord.ui.View):
 
 
 class İptalOnayView(discord.ui.View):
-    def __init__(self, poll_id, poll_title):
+    def __init__(self, poll_id: int, poll_title: str):
         super().__init__(timeout=60)
         self.poll_id = poll_id
         self.poll_title = poll_title
@@ -98,14 +120,17 @@ class İptalOnayView(discord.ui.View):
     @discord.ui.button(label="Evet, İptal Et", style=discord.ButtonStyle.green)
     async def evet_iptal(self, interaction: discord.Interaction, button: discord.ui.Button):
         poll = database.get_poll_by_id(self.poll_id)
-        if poll and poll[2] and poll[3]:
-            try:
-                ch = interaction.guild.get_channel(poll[2])
-                if ch:
-                    msg = await ch.fetch_message(poll[3])
-                    await msg.delete()
-            except:
-                pass
+        if poll:
+            ch_id = poll["channel_id"] if hasattr(poll, "keys") else poll[2]
+            msg_id = poll["message_id"] if hasattr(poll, "keys") else poll[3]
+            if ch_id and msg_id:
+                try:
+                    ch = interaction.guild.get_channel(ch_id)
+                    if ch:
+                        msg = await ch.fetch_message(msg_id)
+                        await msg.delete()
+                except Exception:
+                    pass
         
         database.delete_poll(self.poll_id)
         await interaction.response.edit_message(content=f"✅ **{self.poll_title}** isimli oylama tamamen iptal edildi ve silindi.", view=None)
@@ -121,18 +146,26 @@ class PollCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    def is_authorized(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.guild_permissions.administrator or interaction.user.id == interaction.guild.owner_id:
+            return True
+        return any(role.id == config.AUTHORIZED_ROLE_ID for role in interaction.user.roles)
+
     async def active_poll_autocomplete(self, interaction: discord.Interaction, current: str):
         polls = database.get_active_polls()
-        return [
-            app_commands.Choice(name=p[1], value=str(p[0]))
-            for p in polls if current.lower() in p[1].lower()
-        ][:25]
+        choices = []
+        for p in polls:
+            p_id = p["poll_id"] if hasattr(p, "keys") else p[0]
+            p_title = p["title"] if hasattr(p, "keys") else p[1]
+            if current.lower() in p_title.lower():
+                choices.append(app_commands.Choice(name=p_title[:100], value=str(p_id)))
+        return choices[:25]
 
     @app_commands.command(name="oylamabaşlat", description="Yeni bir oylama başlatır.")
     @app_commands.describe(baslik="Oylama başlığı / konusu", kanal="Oylama panelinin gönderileceği kanal")
     async def oylama_baslat(self, interaction: discord.Interaction, baslik: str, kanal: discord.TextChannel):
-        if not any(role.id == config.AUTHORIZED_ROLE_ID for role in interaction.user.roles):
-            return await interaction.response.send_message("Bu komutu kullanmak için yetkiniz yok.", ephemeral=True)
+        if not self.is_authorized(interaction):
+            return await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz yok.", ephemeral=True)
 
         poll_id = database.add_poll(baslik, kanal.id)
 
@@ -153,79 +186,97 @@ class PollCommands(commands.Cog):
     @app_commands.describe(oylama="Aday eklenecek oylama", aday_ismi="Eklenecek adayın adı")
     @app_commands.autocomplete(oylama=active_poll_autocomplete)
     async def aday_ekle(self, interaction: discord.Interaction, oylama: str, aday_ismi: str):
-        if not any(role.id == config.AUTHORIZED_ROLE_ID for role in interaction.user.roles):
-            return await interaction.response.send_message("Bu komutu kullanmak için yetkiniz yok.", ephemeral=True)
+        if not self.is_authorized(interaction):
+            return await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz yok.", ephemeral=True)
 
-        poll_id = int(oylama)
+        try:
+            poll_id = int(oylama)
+        except ValueError:
+            return await interaction.response.send_message("❌ Geçersiz oylama seçimi.", ephemeral=True)
+
         poll = database.get_poll_by_id(poll_id)
         if not poll:
             return await interaction.response.send_message("❌ Oylama bulunamadı.", ephemeral=True)
 
+        p_title = poll["title"] if hasattr(poll, "keys") else poll[1]
+        p_chid = poll["channel_id"] if hasattr(poll, "keys") else poll[2]
+        p_msgid = poll["message_id"] if hasattr(poll, "keys") else poll[3]
+
         database.add_candidate(poll_id, aday_ismi)
 
-        channel = interaction.guild.get_channel(poll[2])
-        if channel and poll[3]:
+        channel = interaction.guild.get_channel(p_chid)
+        if channel and p_msgid:
             try:
-                msg = await channel.fetch_message(poll[3])
+                msg = await channel.fetch_message(p_msgid)
                 candidates = database.get_candidates(poll_id)
                 
                 embed = discord.Embed(
-                    title=f"🗳️ {poll[1]}",
+                    title=f"🗳️ {p_title}",
                     description="Aşağıdaki açılır menüden oy vermek istediğiniz adayı seçip oyunuzu kullanabilirsiniz.",
                     color=config.COLOR_HEX
                 )
-                cand_list = "\n".join([f"• **{c[1]}**" for c in candidates])
+                cand_list = "\n".join([f"• **{c['name'] if hasattr(c, 'keys') else c[1]}**" for c in candidates])
                 embed.add_field(name="Mevcut Adaylar", value=cand_list, inline=False)
                 embed.set_footer(text="Her kullanıcının 1 oy hakkı vardır ve kullanılan oylar değiştirilemez.")
 
-                view = OylamaView(poll_id, poll[1])
+                view = OylamaView(poll_id, p_title)
                 await msg.edit(embed=embed, view=view)
             except Exception as e:
                 print(f"Mesaj güncelleme hatası: {e}")
 
-        await interaction.response.send_message(f"✅ **{aday_ismi}** adayı **{poll[1]}** oylamasına başarıyla eklendi!", ephemeral=True)
+        await interaction.response.send_message(f"✅ **{aday_ismi}** adayı **{p_title}** oylamasına başarıyla eklendi!", ephemeral=True)
 
     @app_commands.command(name="oylamabitir", description="Oylamayı sonlandırır, log kanalına sonuçları iletir ve kanalı kapatır.")
     @app_commands.describe(oylama="Sonlandırılacak oylama")
     @app_commands.autocomplete(oylama=active_poll_autocomplete)
     async def oylama_bitir(self, interaction: discord.Interaction, oylama: str):
-        if not any(role.id == config.AUTHORIZED_ROLE_ID for role in interaction.user.roles):
-            return await interaction.response.send_message("Bu komutu kullanmak için yetkiniz yok.", ephemeral=True)
+        if not self.is_authorized(interaction):
+            return await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz yok.", ephemeral=True)
 
-        poll_id = int(oylama)
+        try:
+            poll_id = int(oylama)
+        except ValueError:
+            return await interaction.response.send_message("❌ Geçersiz oylama seçimi.", ephemeral=True)
+
         poll = database.get_poll_by_id(poll_id)
         if not poll:
             return await interaction.response.send_message("❌ Oylama bulunamadı.", ephemeral=True)
 
+        p_title = poll["title"] if hasattr(poll, "keys") else poll[1]
+        p_chid = poll["channel_id"] if hasattr(poll, "keys") else poll[2]
+        p_msgid = poll["message_id"] if hasattr(poll, "keys") else poll[3]
+
         candidates = database.get_candidates(poll_id)
         database.close_poll(poll_id)
 
-        total_votes = sum(c[2] for c in candidates)
+        total_votes = sum(c["votes"] if hasattr(c, "keys") else c[2] for c in candidates)
 
         res_embed = discord.Embed(
-            title=f"📊 OYLAMA SONUÇLARI: {poll[1]}",
+            title=f"📊 OYLAMA SONUÇLARI: {p_title}",
             color=config.COLOR_HEX,
             timestamp=datetime.datetime.now(datetime.timezone.utc)
         )
         res_embed.add_field(name="Toplam Kullanılan Geçerli Oy", value=f"**{total_votes}**", inline=False)
 
         if candidates:
-            sorted_cand = sorted(candidates, key=lambda x: x[2], reverse=True)
+            sorted_cand = sorted(candidates, key=lambda x: (x["votes"] if hasattr(x, "keys") else x[2]), reverse=True)
             result_text = ""
             for c in sorted_cand:
-                pct = (c[2] / total_votes * 100) if total_votes > 0 else 0
-                result_text += f"• **{c[1]}:** {c[2]} Oy (%{pct:.1f})\n"
+                c_name = c["name"] if hasattr(c, "keys") else c[1]
+                c_votes = c["votes"] if hasattr(c, "keys") else c[2]
+                pct = (c_votes / total_votes * 100) if total_votes > 0 else 0
+                result_text += f"• **{c_name}:** {c_votes} Oy (%{pct:.1f})\n"
             res_embed.add_field(name="Aday Oy Dağılımı", value=result_text, inline=False)
         else:
             res_embed.add_field(name="Aday Oy Dağılımı", value="Hiç aday yoktu.", inline=False)
 
-        channel = interaction.guild.get_channel(poll[2])
+        channel = interaction.guild.get_channel(p_chid)
         if channel:
-            if poll[3]:
+            if p_msgid:
                 try:
-                    msg = await channel.fetch_message(poll[3])
+                    msg = await channel.fetch_message(p_msgid)
                     ended_embed = discord.Embed(
-                        title=f"🔒 OYLAMA SONLANDI: {poll[1]}",
+                        title=f"🔒 OYLAMA SONLANDI: {p_title}",
                         description="Bu oylama süresi dolduğu için erişime kapatılmıştır.",
                         color=discord.Color.red()
                     )
@@ -242,25 +293,33 @@ class PollCommands(commands.Cog):
 
         log_channel = interaction.guild.get_channel(config.POLL_LOG_CHANNEL_ID)
         if log_channel:
-            await log_channel.send(embed=res_embed)
+            try:
+                await log_channel.send(embed=res_embed)
+            except Exception:
+                pass
 
-        await interaction.response.send_message(f"✅ **{poll[1]}** oylaması başarıyla sonlandırıldı. Sonuçlar log kanalına gönderildi ve ilgili rol için kanal erişimi kapatıldı.", ephemeral=True)
+        await interaction.response.send_message(f"✅ **{p_title}** oylaması başarıyla sonlandırıldı. Sonuçlar log kanalına gönderildi ve ilgili rol için kanal erişimi kapatıldı.", ephemeral=True)
 
     @app_commands.command(name="oylamaiptal", description="Oylamayı sonuçlandırmadan siler.")
     @app_commands.describe(oylama="İptal edilecek oylama")
     @app_commands.autocomplete(oylama=active_poll_autocomplete)
     async def oylama_iptal(self, interaction: discord.Interaction, oylama: str):
-        if not any(role.id == config.AUTHORIZED_ROLE_ID for role in interaction.user.roles):
-            return await interaction.response.send_message("Bu komutu kullanmak için yetkiniz yok.", ephemeral=True)
+        if not self.is_authorized(interaction):
+            return await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz yok.", ephemeral=True)
 
-        poll_id = int(oylama)
+        try:
+            poll_id = int(oylama)
+        except ValueError:
+            return await interaction.response.send_message("❌ Geçersiz oylama seçimi.", ephemeral=True)
+
         poll = database.get_poll_by_id(poll_id)
         if not poll:
             return await interaction.response.send_message("❌ Oylama bulunamadı.", ephemeral=True)
 
-        view = İptalOnayView(poll_id, poll[1])
+        p_title = poll["title"] if hasattr(poll, "keys") else poll[1]
+        view = İptalOnayView(poll_id, p_title)
         await interaction.response.send_message(
-            content=f"⚠️ **{poll[1]}** isimli oylamayı silmek istediğinize emin misiniz?",
+            content=f"⚠️ **{p_title}** isimli oylamayı silmek istediğinize emin misiniz?",
             view=view,
             ephemeral=True
         )
