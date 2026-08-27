@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import datetime
 import config
+import database
 
 # Roller ve Kanallar
 BASE_MEMBER_ROLE_ID = 1537153933305315328
@@ -96,7 +97,7 @@ class Register(commands.Cog):
         partimakamı: app_commands.Choice[str],
         rpmakamı: app_commands.Choice[str]
     ):
-        staff_role_id = getattr(config, "STAFF_ROLE_ID", None)
+        staff_role_id = getattr(config, "STAFF_ROLE_ID", None) or getattr(config, "AUTHORIZED_ROLE_ID", None)
         if staff_role_id:
             staff_role = interaction.guild.get_role(staff_role_id)
             if staff_role and staff_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
@@ -155,6 +156,22 @@ class Register(commands.Cog):
         roles_text_list = ["DSP Üyesi"] + role_names
         roles_text = ", ".join(dict.fromkeys(roles_text_list))
 
+        # Veritabanına Kayıt Ekleme (Sıralama /kayıttop için)
+        try:
+            database.add_register(
+                user_id=kullanıcı.id,
+                username=str(kullanıcı),
+                new_nick=new_nickname,
+                parti_name=partimakamı.name,
+                parti_code=p_val,
+                rp_name=rpmakamı.name,
+                rp_code=r_val,
+                roles_given=roles_text,
+                staff_id=interaction.user.id
+            )
+        except Exception as e:
+            print(f"[HATA] Kayıt veritabanına eklenemedi: {e}")
+
         embed_desc = (
             f"**Kayıt Edilen Kullanıcı**\n"
             f"{kullanıcı.mention} ( `{kullanıcı.id}` )\n\n"
@@ -205,7 +222,7 @@ class Register(commands.Cog):
         kullanıcı: discord.Member,
         sebep: str
     ):
-        staff_role_id = getattr(config, "STAFF_ROLE_ID", None)
+        staff_role_id = getattr(config, "STAFF_ROLE_ID", None) or getattr(config, "AUTHORIZED_ROLE_ID", None)
         if staff_role_id:
             staff_role = interaction.guild.get_role(staff_role_id)
             if staff_role and staff_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
@@ -214,7 +231,6 @@ class Register(commands.Cog):
 
         await interaction.response.defer()
 
-        # Botun rol hiyerarşisi kontrolü
         if kullanıcı.top_role >= interaction.guild.me.top_role:
             await interaction.followup.send("❌ Bu kullanıcının rolü botun rolünden yüksek veya eşit olduğu için işlem yapılamaz!", ephemeral=True)
             return
@@ -224,14 +240,14 @@ class Register(commands.Cog):
             await interaction.followup.send("❌ Kayıtsız rolü sunucuda bulunamadı!", ephemeral=True)
             return
 
-        # 1. Takma adı (sunucu içi ismi) varsa sıfırla
+        # 1. Takma adı (sunucu içi ismi) sıfırla
         if kullanıcı.nick:
             try:
                 await kullanıcı.edit(nick=None, reason=f"Kayıtsıza atıldı: {sebep}")
             except Exception as e:
                 print(f"Takma ad sıfırlanırken hata: {e}")
 
-        # 2. Alınacak rolleri belirle (@everyone ve bot/entegrasyon rolleri hariç)
+        # 2. Alınacak rolleri belirle
         roles_to_remove = [r for r in kullanıcı.roles if r != interaction.guild.default_role and not r.is_integration() and not r.is_bot_managed()]
 
         # 3. Rolleri al
@@ -260,7 +276,7 @@ class Register(commands.Cog):
         reply_embed.set_footer(text=f"İşlemi Yapan: {interaction.user.display_name}")
         await interaction.followup.send(embed=reply_embed)
 
-        # 6. 1541807577837342834 ID'li Raporlama Kanalına Rapor Logu Gönder
+        # 6. Raporlama Kanalına Log Gönder
         report_channel = interaction.guild.get_channel(REPORT_LOG_CHANNEL_ID)
         if report_channel is None:
             try:
@@ -282,8 +298,6 @@ class Register(commands.Cog):
 
             try:
                 await report_channel.send(embed=report_embed)
-            except discord.Forbidden:
-                print(f"[HATA] Botun #{report_channel.name} raporlama kanalına mesaj atma yetkisi yok!")
             except Exception as e:
                 print(f"[HATA] Rapor log gönderilemedi: {e}")
 
