@@ -6,8 +6,7 @@ import datetime
 import config
 from keep_alive import keep_alive
 
-# Raporlama / Genel Log Kanalı ID
-AUDIT_LOG_CHANNEL_ID = 1541807577837342834
+AUDIT_LOG_CHANNEL_ID = getattr(config, "AUDIT_LOG_CHANNEL_ID", 1541807577837342834)
 
 class BotClient(commands.Bot):
     def __init__(self):
@@ -25,16 +24,6 @@ class BotClient(commands.Bot):
         )
 
     async def setup_hook(self):
-        # Global Slash Komut Yetki Denetimi (Yalnızca Yöneticiler)
-        @self.tree.interaction_check
-        async def slash_admin_check(interaction: discord.Interaction) -> bool:
-            if interaction.guild is None:
-                return False
-            if interaction.user.id == interaction.guild.owner_id or interaction.user.guild_permissions.administrator:
-                return True
-            await interaction.response.send_message("❌ Bu komutu kullanabilmek için **Yönetici** yetkisine sahip olmalısınız!", ephemeral=True)
-            return False
-
         # commands/ klasöründeki cog modüllerini yükle
         commands_dir = os.path.join(os.path.dirname(__file__), "commands")
         if os.path.exists(commands_dir):
@@ -70,19 +59,6 @@ class BotClient(commands.Bot):
 
 bot = BotClient()
 
-# =======================================================
-# 🔒 GLOBAL YÖNETİCİ YETKİ KONTROLÜ (PREFIX KOMUTLARI İÇİN)
-# =======================================================
-@bot.check
-async def prefix_admin_check(ctx: commands.Context):
-    if ctx.guild is None:
-        return False
-    if ctx.author.id == ctx.guild.owner_id or ctx.author.guild_permissions.administrator:
-        return True
-    await ctx.reply("❌ Bu komutu kullanabilmek için **Yönetici** yetkisine sahip olmalısınız!", mention_author=False)
-    return False
-
-
 # ==========================================
 # 📊 MERKEZİ LOG VE RAPORLAMA SİSTEMİ
 # ==========================================
@@ -93,12 +69,8 @@ async def on_interaction(interaction: discord.Interaction):
     if interaction.type == discord.InteractionType.application_command:
         cmd_name = interaction.data.get("name", "bilinmeyen-komut")
         
-        # Kayıt komutu hariç tutuldu
-        if cmd_name.lower() in ["kayıt", "kayit"]:
-            return
-
-        # Sadece yöneticiler komut kullanabildiği için yetkisiz denemeleri loglama
-        if not (interaction.user.id == interaction.guild.owner_id or interaction.user.guild_permissions.administrator):
+        # Kayıt ve İsim Değiştirme kendi özel raporunu attığı için çift log önleme
+        if cmd_name.lower() in ["kayıt", "kayit", "isimdegistir", "kayıtsızver"]:
             return
 
         log_channel = interaction.guild.get_channel(AUDIT_LOG_CHANNEL_ID)
@@ -150,6 +122,10 @@ async def on_interaction(interaction: discord.Interaction):
 # 2. TÜM PREFIX ( d! / D! ) KOMUTLARININ RAPORLANMASI
 @bot.event
 async def on_command_completion(ctx: commands.Context):
+    # İsim değiştirme veya rol komutları kendi embed logunu atar
+    if ctx.command.name in ["isimdeğistir", "isimdegistir", "rolver", "rolal"]:
+        return
+
     log_channel = ctx.guild.get_channel(AUDIT_LOG_CHANNEL_ID)
     if not log_channel:
         return
@@ -207,7 +183,7 @@ if __name__ == "__main__":
     keep_alive()
     
     # Botu Başlat
-    token = getattr(config, "DISCORD_TOKEN", None) or os.getenv("DISCORD_TOKEN")
+    token = getattr(config, "DISCORD_TOKEN", None) or getattr(config, "TOKEN", None) or os.getenv("DISCORD_TOKEN")
     if token:
         bot.run(token)
     else:
