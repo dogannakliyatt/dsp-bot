@@ -63,9 +63,9 @@ bot = BotClient()
 # 📊 MERKEZİ LOG VE RAPORLAMA SİSTEMİ
 # ==========================================
 
-# 1. TÜM SLASH ( / ) ETKİLEŞİMLERİNİ YAKALAYIP RAPORLAMA
-@bot.event
-async def on_interaction(interaction: discord.Interaction):
+# 1. TÜM SLASH ( / ) ETKİLEŞİMLERİNİ YAKALAYIP RAPORLAMA (bot.listen kullanılmalı!)
+@bot.listen("on_interaction")
+async def log_interaction_listener(interaction: discord.Interaction):
     if interaction.type == discord.InteractionType.application_command:
         cmd_name = interaction.data.get("name", "bilinmeyen-komut")
         
@@ -120,9 +120,8 @@ async def on_interaction(interaction: discord.Interaction):
 
 
 # 2. TÜM PREFIX ( d! / D! ) KOMUTLARININ RAPORLANMASI
-@bot.event
-async def on_command_completion(ctx: commands.Context):
-    # İsim değiştirme veya rol komutları kendi embed logunu atar
+@bot.listen("on_command_completion")
+async def log_command_listener(ctx: commands.Context):
     if ctx.command.name in ["isimdeğistir", "isimdegistir", "rolver", "rolal"]:
         return
 
@@ -154,8 +153,8 @@ async def on_command_completion(ctx: commands.Context):
 
 
 # 3. TOPLU MESAJ SİLME RAPORU
-@bot.event
-async def on_bulk_message_delete(messages):
+@bot.listen("on_bulk_message_delete")
+async def log_bulk_delete_listener(messages):
     if not messages:
         return
     guild = messages[0].guild
@@ -179,12 +178,10 @@ async def on_bulk_message_delete(messages):
 
 
 if __name__ == "__main__":
-    # Render Webhook / 7/24 Keep Alive Sunucusu
     keep_alive()
     
-    # Botu Başlat
     token = getattr(config, "DISCORD_TOKEN", None) or getattr(config, "TOKEN", None) or os.getenv("DISCORD_TOKEN")
     if token:
         bot.run(token)
     else:
-        print("❌ HATA: DISCORD_TOKEN bulunamadı! Lütfen config.py veya Environment Variables alanını kontrol edin.")
+        print("❌ HATA: DISCORD_TOKEN bulunamadı!")
