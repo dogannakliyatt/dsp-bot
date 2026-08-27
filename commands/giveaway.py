@@ -122,7 +122,7 @@ class GiveawayManageView(discord.ui.View):
     async def edit_time(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(EditTimeModal(self.data))
 
-    @discord.ui.button(label="Şartları Düzenle", style=discord.ButtonStyle.secondary, emoji="📋")
+    @discord.ui.button(label="Şartları Düzenle", style=discord.ButtonStyle.primary, emoji="📋")
     async def edit_reqs(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(EditRequirementsModal(self.data))
 
