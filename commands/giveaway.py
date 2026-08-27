@@ -6,7 +6,6 @@ import asyncio
 import random
 import config
 
-# Global / Cog Düzeyinde Aktif Çekiliş Verisi (Guild ID -> Data)
 active_giveaways = {}
 
 # --- MODAL PENCERELERİ (GİRDİ ALMA MENÜLERİ) ---
@@ -127,6 +126,58 @@ class GiveawayManageView(discord.ui.View):
         await interaction.response.send_modal(EditRequirementsModal(self.data))
 
 
+# --- TEKRAR ÇEK BUTONU VIEW ---
+
+class RerollView(discord.ui.View):
+    def __init__(self, prize: str, host: discord.Member, participants: set, won_users: set):
+        super().__init__(timeout=None)
+        self.prize = prize
+        self.host = host
+        self.participants = participants
+        self.won_users = won_users
+
+    def is_authorized(self, member: discord.Member, guild: discord.Guild) -> bool:
+        if member.guild_permissions.administrator or member.id == guild.owner_id:
+            return True
+        staff_id = getattr(config, "STAFF_ROLE_ID", None) or getattr(config, "AUTHORIZED_ROLE_ID", None)
+        return any(role.id == staff_id for role in member.roles)
+
+    @discord.ui.button(label="Tekrar Çek", style=discord.ButtonStyle.primary, emoji="🔄", custom_id="btn_reroll_giveaway")
+    async def reroll_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.is_authorized(interaction.user, interaction.guild):
+            return await interaction.response.send_message("❌ Bu butonu sadece yetkililer kullanabilir.", ephemeral=True)
+
+        # Henüz kazanmamış adayları filtrele
+        available_pool = [uid for uid in self.participants if uid not in self.won_users]
+
+        if not available_pool:
+            return await interaction.response.send_message("❌ Çekilişe katılan ve henüz kazanmamış başka kimse bulunmuyor!", ephemeral=True)
+
+        new_winner_id = random.choice(available_pool)
+        self.won_users.add(new_winner_id)
+        winner_mention = f"<@{new_winner_id}>"
+
+        reroll_embed = discord.Embed(
+            title="🎉 ÇEKİLİŞ YENİDEN ÇEKİLDİ!",
+            description=(
+                f"🎁 **Ödül:** `{self.prize}`\n\n"
+                f"🏆 **Tebrikler:** {winner_mention}\n\n"
+                f"📌 *Ödülünüzü teslim almak için lütfen {self.host.mention} ile iletişime geçin.*"
+            ),
+            color=discord.Color.gold(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc)
+        )
+        reroll_embed.set_footer(text="Demokratik Sol Parti Çekiliş Sistemi")
+
+        # Yeni kazanan mesajını altına tekrar butonunu ekleyerek gönder
+        await interaction.channel.send(
+            content=f"🎉 {winner_mention}",
+            embed=reroll_embed,
+            view=RerollView(self.prize, self.host, self.participants, self.won_users)
+        )
+        await interaction.response.send_message(f"✅ Yeni kazanan belirlendi: {winner_mention}", ephemeral=True)
+
+
 # --- ANA ÇEKİLİŞ KATILIM VIEW ---
 
 class GiveawayView(discord.ui.View):
@@ -211,6 +262,7 @@ class GiveawayCog(commands.Cog):
 
         winners_count = min(len(participants), data["winners_count"])
         selected_ids = random.sample(participants, winners_count)
+        won_users = set(selected_ids)
         winners_mentions = ", ".join([f"<@{uid}>" for uid in selected_ids])
 
         end_embed = data["create_embed"](is_ended=True, winners_str=winners_mentions)
@@ -227,7 +279,15 @@ class GiveawayCog(commands.Cog):
             timestamp=datetime.datetime.now(datetime.timezone.utc)
         )
         celebrate_embed.set_footer(text="Demokratik Sol Parti Çekiliş Sistemi")
-        await channel.send(content=f"🎉 {winners_mentions}", embed=celebrate_embed)
+        
+        # Kutunun altına Tekrar Çek butonunu ekle
+        reroll_view = RerollView(
+            prize=data["prize"], 
+            host=data["host"], 
+            participants=data["participants"], 
+            won_users=won_users
+        )
+        await channel.send(content=f"🎉 {winners_mentions}", embed=celebrate_embed, view=reroll_view)
 
     # ------------------ /çekiliş KOMUTU ------------------
     @app_commands.command(name="çekiliş", description="Modern butonlu yeni bir çekiliş başlatır.")
