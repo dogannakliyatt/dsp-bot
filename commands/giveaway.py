@@ -34,6 +34,40 @@ class GiveawayCog(commands.Cog):
             return True
         return any(role.id == config.AUTHORIZED_ROLE_ID for role in interaction.user.roles)
 
+    async def run_giveaway_timer(self, channel_id: int, message_id: int, ödül: str, kazanan_sayısı: int, süre_saniye: int):
+        await asyncio.sleep(süre_saniye)
+        channel = self.bot.get_channel(channel_id)
+        if not channel:
+            return
+
+        try:
+            fetch_msg = await channel.fetch_message(message_id)
+        except Exception:
+            return
+
+        reaction = discord.utils.get(fetch_msg.reactions, emoji="🎉")
+        users = []
+        if reaction:
+            users = [user async for user in reaction.users() if not user.bot]
+
+        if not users:
+            end_embed = discord.Embed(
+                title="🎉 ÇEKİLİŞ SONUÇLANDI! 🎉",
+                description=f"**Ödül:** {ödül}\n❌ Yeterli katılım olmadığı için kazanan belirlenemedi.",
+                color=discord.Color.red()
+            )
+            return await channel.send(embed=end_embed)
+
+        winners = random.sample(users, min(len(users), kazanan_sayısı))
+        winner_mentions = ", ".join([w.mention for w in winners])
+
+        end_embed = discord.Embed(
+            title="🎉 ÇEKİLİŞ SONUÇLANDI! 🎉",
+            description=f"🎁 **Ödül:** {ödül}\n🏆 **Kazanan(lar):** {winner_mentions}\n👏 Tebrikler!",
+            color=discord.Color.green()
+        )
+        await channel.send(embed=end_embed)
+
     @app_commands.command(name="çekiliş", description="Yeni bir çekiliş başlatır.")
     @app_commands.describe(
         ödül="Çekilişte verilecek ödül",
@@ -48,8 +82,6 @@ class GiveawayCog(commands.Cog):
         if kazanan_sayısı < 1 or süre_dakika < 1:
             return await interaction.response.send_message("❌ Kazanan sayısı ve süre en az 1 olmalıdır.", ephemeral=True)
 
-        await interaction.response.defer(ephemeral=False)
-
         end_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=süre_dakika)
         timestamp_str = f"<t:{int(end_time.timestamp())}:R>"
 
@@ -57,7 +89,7 @@ class GiveawayCog(commands.Cog):
             f"🎁 **Ödül:** {ödül}\n"
             f"👥 **Kazanan Sayısı:** `{kazanan_sayısı}`\n"
             f"⏳ **Bitiş:** {timestamp_str}\n"
-            f"🎉 **Katılmak için aşağıdaki 🎉 butonuna tıklayın!**"
+            f"🎉 **Katılmak için aşağıdaki 🎉 emojisine tıklayın!**"
         )
 
         embed = discord.Embed(
@@ -69,42 +101,24 @@ class GiveawayCog(commands.Cog):
         embed.set_footer(text="Bitiş Zamanı")
 
         view = GiveawayView(requirements=şartlar)
-        message = await interaction.followup.send(embed=embed, view=view if şartlar else None)
-        
+        await interaction.response.send_message(embed=embed, view=view if şartlar else None)
+        message = await interaction.original_response()
+
         try:
             await message.add_reaction("🎉")
         except Exception:
             pass
 
-        await asyncio.sleep(süre_dakika * 60)
-
-        try:
-            fetch_msg = await interaction.channel.fetch_message(message.id)
-        except discord.NotFound:
-            return
-
-        reaction = discord.utils.get(fetch_msg.reactions, emoji="🎉")
-        users = []
-        if reaction:
-            users = [user async for user in reaction.users() if not user.bot]
-
-        if not users:
-            end_embed = discord.Embed(
-                title="🎉 ÇEKİLİŞ SONUÇLANDI! 🎉",
-                description=f"**Ödül:** {ödül}\n❌ Yeterli katılım olmadığı için kazanan belirlenemedi.",
-                color=discord.Color.red()
+        # Çekiliş sayacını arka planda çalıştır (Komutun donmasını önler)
+        asyncio.create_task(
+            self.run_giveaway_timer(
+                channel_id=interaction.channel_id,
+                message_id=message.id,
+                ödül=ödül,
+                kazanan_sayısı=kazanan_sayısı,
+                süre_saniye=süre_dakika * 60
             )
-            return await interaction.channel.send(embed=end_embed)
-
-        winners = random.sample(users, min(len(users), kazanan_sayısı))
-        winner_mentions = ", ".join([w.mention for w in winners])
-
-        end_embed = discord.Embed(
-            title="🎉 ÇEKİLİŞ SONUÇLANDI! 🎉",
-            description=f"🎁 **Ödül:** {ödül}\n🏆 **Kazanan(lar):** {winner_mentions}\n👏 Tebrikler!",
-            color=discord.Color.green()
         )
-        await interaction.channel.send(embed=end_embed)
 
 async def setup(bot):
     await bot.add_cog(GiveawayCog(bot))
