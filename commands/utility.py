@@ -31,7 +31,7 @@ class UtilityCommands(commands.Cog):
             status_text = "Yüksek 🔴"
 
         embed = discord.Embed(
-            title="🏓 Pong!",
+            title="🏓 Ping!",
             color=embed_color,
             timestamp=datetime.datetime.now(datetime.timezone.utc)
         )
