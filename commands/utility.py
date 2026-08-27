@@ -14,6 +14,34 @@ class UtilityCommands(commands.Cog):
         staff_id = getattr(config, "STAFF_ROLE_ID", None) or getattr(config, "AUTHORIZED_ROLE_ID", None)
         return any(role.id == staff_id for role in interaction.user.roles)
 
+    @app_commands.command(name="ping", description="Botun anlık gecikme (ping) süresini gösterir.")
+    async def ping(self, interaction: discord.Interaction):
+        # Botun websocket gecikmesini hesapla
+        latency_ms = round(self.bot.latency * 1000)
+
+        # Gecikmeye göre renk belirleme
+        if latency_ms < 100:
+            embed_color = discord.Color.green()
+            status_text = "Mükemmel 🟢"
+        elif latency_ms < 200:
+            embed_color = discord.Color.gold()
+            status_text = "İyi 🟡"
+        else:
+            embed_color = discord.Color.red()
+            status_text = "Yüksek 🔴"
+
+        embed = discord.Embed(
+            title="🏓 Pong!",
+            color=embed_color,
+            timestamp=datetime.datetime.now(datetime.timezone.utc)
+        )
+        embed.add_field(name="📶 Gecikme Süresi", value=f"`{latency_ms} ms`", inline=True)
+        embed.add_field(name="📊 Bağlantı Durumu", value=status_text, inline=True)
+        embed.set_footer(text=f"Sorgulayan: {interaction.user.display_name}", icon_url=interaction.user.display_avatar.url)
+
+        # Herkese açık olarak gönder
+        await interaction.response.send_message(embed=embed)
+
     @app_commands.command(name="mesajyaz", description="Bot üzerinden şık bir embed formatında mesaj gönderir.")
     @app_commands.describe(
         mesaj="Kutu içine yazılacak ana mesaj metni",
@@ -32,12 +60,10 @@ class UtilityCommands(commands.Cog):
 
         target_channel = kanal if kanal else interaction.channel
 
-        # Botun hedef kanalda mesaj gönderme ve embed yetkisi kontrolü
         perms = target_channel.permissions_for(interaction.guild.me)
         if not perms.send_messages or not perms.embed_links:
             return await interaction.response.send_message(f"❌ Botun {target_channel.mention} kanalına mesaj veya Embed gönderme yetkisi yok!", ephemeral=True)
 
-        # Embed oluşturma
         embed = discord.Embed(
             title=baslik if baslik else None,
             description=mesaj,
