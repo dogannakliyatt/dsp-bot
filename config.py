@@ -1,10 +1,15 @@
 import os
 
 # Discord Bot Token
-TOKEN = os.getenv("DISCORD_TOKEN")
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+TOKEN = DISCORD_TOKEN  # Geriye dönük uyumluluk
 
-# Yetkili Rol ID (/oylamabaşlat, /kayıt vb. yetkisi olan rol)
+# Prefix Listesi
+PREFIX = ["d!", "D!"]
+
+# Yetkili Rol ID (/oylamabaşlat, /kayıt, /rolver vb. yetkisi olan rol)
 AUTHORIZED_ROLE_ID = 1537129117152055426
+STAFF_ROLE_ID = 1537129117152055426  # register ve roles modülleriyle tam uyum
 
 # Kayıtsız Üye Rol ID (Kayıt olunca alınacak rol)
 UNREGISTERED_ROLE_ID = 1537154022497329233
@@ -14,6 +19,9 @@ REGISTER_LOG_CHANNEL_ID = 1537158783434883193
 
 # Oylama Log Kanalı ID
 POLL_LOG_CHANNEL_ID = 1541876670867439616
+
+# Raporlama / Genel Log Kanalı ID
+AUDIT_LOG_CHANNEL_ID = 1541807577837342834
 
 # Tema Rengi (Hex)
 COLOR_HEX = 0x00A8E8
@@ -50,4 +58,6 @@ RP_ROLES = {
     "MGBV": [1537132296187314278],
     "MV": [1537132367469510706]
 }
+
+# Sabit Ses Kanalı ID
 VOICE_CHANNEL_ID = 1541892351411101827
