@@ -38,6 +38,38 @@ class AdminCommands(commands.Cog):
         except Exception:
             pass
 
+    @app_commands.command(name="kilit", description="Bulunduğunuz kanalı mesaj yazımına kapatır veya açar.")
+    @app_commands.describe(durum="Kanal kilitleme durumu")
+    @app_commands.choices(durum=[
+        app_commands.Choice(name="Kapat (Yazmayı Engelle)", value="kapat"),
+        app_commands.Choice(name="Aç (Yazmayı Serbest Bırak)", value="ac")
+    ])
+    async def kilit(self, interaction: discord.Interaction, durum: app_commands.Choice[str]):
+        if not self.is_authorized(interaction):
+            return await interaction.response.send_message("❌ Bu komutu kullanmak için gerekli yetkiye sahip değilsiniz.", ephemeral=True)
+
+        channel = interaction.channel
+        default_role = interaction.guild.default_role
+
+        if durum.value == "kapat":
+            await channel.set_permissions(default_role, send_messages=False)
+            embed = discord.Embed(
+                title="🔒 Kanal Kilitlendi",
+                description="Bu kanal yetkililer tarafından geçici olarak **mesaj gönderimine kapatılmıştır.**",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed)
+            await self.log_admin_action(interaction.guild, interaction.user, channel.mention, "Kanal Kilitleme", "Kanal kapatıldı")
+        else:
+            await channel.set_permissions(default_role, send_messages=None)
+            embed = discord.Embed(
+                title="🔓 Kanal Kilidi Açıldı",
+                description="Bu kanal yeniden **mesaj gönderimine açılmıştır.**",
+                color=discord.Color.green()
+            )
+            await interaction.response.send_message(embed=embed)
+            await self.log_admin_action(interaction.guild, interaction.user, channel.mention, "Kanal Kilit Açma", "Kanal açıldı")
+
     @app_commands.command(name="yasakla", description="Kullanıcıyı sunucudan yasaklar.")
     @app_commands.describe(kullanici="Yasaklanacak kullanıcı", sebep="Yasaklama sebebi")
     async def yasakla(self, interaction: discord.Interaction, kullanici: discord.Member, sebep: str):
