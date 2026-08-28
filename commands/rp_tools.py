@@ -112,6 +112,7 @@ class RPTools(commands.Cog):
             "Genel Başkan Yardımcıları": 1537149477796970686,
             "Parti Sözcüsü": 1537149604343316572,
             "Gençlik Kolları Başkanı": 1537149684345475123,
+            "Merkez Yürütme Kurulu Üyesi (MYKÜ)": 1537149762913046568
         }
 
         for title, role_id in party_roles_map.items():
@@ -120,7 +121,9 @@ class RPTools(commands.Cog):
                 members_str = "\n".join([f"• {m.mention} (`{m.display_name}`)" for m in role.members])
             else:
                 members_str = "*Atama Yapılmadı*"
-            embed.add_field(name=title, value=members_str, inline=True)
+            
+            # Makamlar arasına 1 satır temiz boşluk ekleme
+            embed.add_field(name=f"📌 {title}", value=f"{members_str}\n\u200b", inline=False)
 
         embed.set_footer(text="Demokratik Sol Parti Resmi Yönetim Şeması")
         await interaction.response.send_message(embed=embed)
