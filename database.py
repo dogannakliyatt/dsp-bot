@@ -61,7 +61,8 @@ def init_db():
                 title TEXT NOT NULL,
                 channel_id BIGINT NOT NULL,
                 message_id BIGINT DEFAULT 0,
-                status TEXT DEFAULT 'active'
+                status TEXT DEFAULT 'active',
+                target_role_id BIGINT DEFAULT NULL
             );
         ''')
         cursor.execute('''
@@ -77,6 +78,27 @@ def init_db():
                 poll_id INTEGER NOT NULL,
                 user_id BIGINT NOT NULL,
                 PRIMARY KEY (poll_id, user_id)
+            );
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS giveaways (
+                giveaway_id SERIAL PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                channel_id BIGINT NOT NULL,
+                message_id BIGINT DEFAULT 0,
+                prize TEXT NOT NULL,
+                winners_count INTEGER DEFAULT 1,
+                end_time TIMESTAMP NOT NULL,
+                host_id BIGINT NOT NULL,
+                requirements TEXT,
+                status TEXT DEFAULT 'active'
+            );
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS giveaway_participants (
+                giveaway_id INTEGER NOT NULL,
+                user_id BIGINT NOT NULL,
+                PRIMARY KEY (giveaway_id, user_id)
             );
         ''')
 
@@ -98,11 +120,32 @@ def get_top_staff():
         ''')
         return cursor.fetchall()
 
+def get_weekly_staff_stats():
+    with get_db_cursor(commit=False) as cursor:
+        cursor.execute('''
+            SELECT staff_id, COUNT(*) as count 
+            FROM registers 
+            WHERE staff_id IS NOT NULL AND timestamp >= NOW() - INTERVAL '7 days'
+            GROUP BY staff_id 
+            ORDER BY count DESC
+        ''')
+        return cursor.fetchall()
+
+def get_user_history(user_id):
+    with get_db_cursor(commit=False) as cursor:
+        cursor.execute("SELECT * FROM registers WHERE user_id = %s ORDER BY timestamp DESC", (user_id,))
+        return cursor.fetchall()
+
+def export_all_registers():
+    with get_db_cursor(commit=False) as cursor:
+        cursor.execute("SELECT id, user_id, username, new_nick, parti_name, rp_name, roles_given, staff_id, timestamp FROM registers ORDER BY id ASC")
+        return cursor.fetchall()
+
 # --- OYLAMA SİSTEMİ VERİTABANI İŞLEMLERİ ---
 
-def add_poll(title, channel_id):
+def add_poll(title, channel_id, target_role_id=None):
     with get_db_cursor(commit=True) as cursor:
-        cursor.execute("INSERT INTO polls (title, channel_id) VALUES (%s, %s) RETURNING poll_id", (title, channel_id))
+        cursor.execute("INSERT INTO polls (title, channel_id, target_role_id) VALUES (%s, %s, %s) RETURNING poll_id", (title, channel_id, target_role_id))
         return cursor.fetchone()["poll_id"]
 
 def set_poll_message_id(poll_id, message_id):
@@ -111,12 +154,12 @@ def set_poll_message_id(poll_id, message_id):
 
 def get_active_polls():
     with get_db_cursor(commit=False) as cursor:
-        cursor.execute("SELECT poll_id, title, channel_id, message_id FROM polls WHERE status = 'active'")
+        cursor.execute("SELECT poll_id, title, channel_id, message_id, target_role_id FROM polls WHERE status = 'active'")
         return cursor.fetchall()
 
 def get_poll_by_id(poll_id):
     with get_db_cursor(commit=False) as cursor:
-        cursor.execute("SELECT poll_id, title, channel_id, message_id, status FROM polls WHERE poll_id = %s", (poll_id,))
+        cursor.execute("SELECT poll_id, title, channel_id, message_id, status, target_role_id FROM polls WHERE poll_id = %s", (poll_id,))
         return cursor.fetchone()
 
 def add_candidate(poll_id, name):
@@ -155,6 +198,51 @@ def delete_poll(poll_id):
         cursor.execute("DELETE FROM polls WHERE poll_id = %s", (poll_id,))
         cursor.execute("DELETE FROM poll_candidates WHERE poll_id = %s", (poll_id,))
         cursor.execute("DELETE FROM poll_votes WHERE poll_id = %s", (poll_id,))
+
+# --- ÇEKİLİŞ SİSTEMİ VERİTABANI İŞLEMLERİ ---
+
+def create_db_giveaway(guild_id, channel_id, prize, winners_count, end_time, host_id, requirements):
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute('''
+            INSERT INTO giveaways (guild_id, channel_id, prize, winners_count, end_time, host_id, requirements)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING giveaway_id
+        ''', (guild_id, channel_id, prize, winners_count, end_time, host_id, requirements))
+        return cursor.fetchone()["giveaway_id"]
+
+def set_giveaway_message_id(giveaway_id, message_id):
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute("UPDATE giveaways SET message_id = %s WHERE giveaway_id = %s", (message_id, giveaway_id))
+
+def get_active_giveaway(guild_id):
+    with get_db_cursor(commit=False) as cursor:
+        cursor.execute("SELECT * FROM giveaways WHERE guild_id = %s AND status = 'active'", (guild_id,))
+        return cursor.fetchone()
+
+def update_giveaway_data(giveaway_id, prize, winners_count, end_time, requirements):
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute('''
+            UPDATE giveaways 
+            SET prize = %s, winners_count = %s, end_time = %s, requirements = %s
+            WHERE giveaway_id = %s
+        ''', (prize, winners_count, end_time, requirements, giveaway_id))
+
+def end_db_giveaway(giveaway_id, status='ended'):
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute("UPDATE giveaways SET status = %s WHERE giveaway_id = %s", (status, giveaway_id))
+
+def add_giveaway_participant(giveaway_id, user_id):
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute("INSERT INTO giveaway_participants (giveaway_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING", (giveaway_id, user_id))
+
+def remove_giveaway_participant(giveaway_id, user_id):
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute("DELETE FROM giveaway_participants WHERE giveaway_id = %s AND user_id = %s", (giveaway_id, user_id))
+
+def get_giveaway_participants(giveaway_id):
+    with get_db_cursor(commit=False) as cursor:
+        cursor.execute("SELECT user_id FROM giveaway_participants WHERE giveaway_id = %s", (giveaway_id,))
+        return [row["user_id"] for row in cursor.fetchall()]
 
 try:
     init_db()
