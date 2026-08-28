@@ -4,26 +4,23 @@ from discord import app_commands
 import asyncio
 import config
 
-TARGET_ROLE_ID = 1537153933305315328
+TARGET_ROLE_ID = getattr(config, "BASE_MEMBER_ROLE_ID", 1537153933305315328)
 
 class AutoNickSync(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self._updating_members = set()
 
     def get_base_name(self, display_name: str) -> str:
-        """Kullanıcının unvanlar haricindeki saf adını ayıklar."""
         if not display_name:
             return "Kullanıcı"
         return display_name.split("/")[0].strip()
 
     def determine_titles(self, member: discord.Member):
-        """Kullanıcının rollerine göre Parti ve RP unvanlarını tespit eder."""
         user_role_ids = {r.id for r in member.roles}
-        
         parti_title = None
         rp_title = None
 
-        # 1. Parti Makamı Kontrolü
         for code, req_ids in config.PARTY_ROLES.items():
             if code == "Üye" or not req_ids:
                 continue
@@ -31,7 +28,6 @@ class AutoNickSync(commands.Cog):
                 parti_title = code
                 break
 
-        # 2. RP Makamı Kontrolü
         for code, req_ids in config.RP_ROLES.items():
             if code == "Yok" or not req_ids:
                 continue
@@ -42,7 +38,6 @@ class AutoNickSync(commands.Cog):
         return parti_title, rp_title
 
     def build_expected_nickname(self, member: discord.Member) -> str:
-        """Kullanıcının olması gereken takma adını üretir."""
         base_name = self.get_base_name(member.display_name)
         parti_title, rp_title = self.determine_titles(member)
 
@@ -67,10 +62,12 @@ class AutoNickSync(commands.Cog):
         if after.bot or after.id == after.guild.owner_id:
             return
 
-        if before.roles == after.roles:
+        if after.id in self._updating_members:
             return
 
-        # Sadece hedef role sahipse veya bu rolün değişiminde çalış
+        if before.nick == after.nick and before.roles == after.roles:
+            return
+
         has_target_role = any(r.id == TARGET_ROLE_ID for r in after.roles)
         had_target_role = any(r.id == TARGET_ROLE_ID for r in before.roles)
         if not has_target_role and not had_target_role:
@@ -83,17 +80,21 @@ class AutoNickSync(commands.Cog):
         current_nick = after.nick if after.nick else after.name
 
         if current_nick != expected_nick:
+            self._updating_members.add(after.id)
             try:
                 await after.edit(nick=expected_nick, reason="Otomatik Parti/RP Makam Takma Ad Güncellemesi")
             except Exception:
                 pass
+            finally:
+                await asyncio.sleep(1)
+                self._updating_members.discard(after.id)
 
     # ==========================================
-    # 🚀 HIZLANDIRILMIŞ TOPLU EŞİTLEME KOMUTU
+    # 🚀 GÜVENLİ VE HIZLI TOPLU EŞİTLEME KOMUTU
     # ==========================================
     @app_commands.command(
         name="ototakmaadesitle", 
-        description="Yalnızca DSP Üye rolüne sahip üyelerin takma adlarını hızlıca senkronize eder."
+        description="Yalnızca DSP Üye rolüne sahip üyelerin takma adlarını güvenle senkronize eder."
     )
     async def sync_all_nicknames(self, interaction: discord.Interaction):
         if not config.is_authorized(interaction.user, interaction.guild):
@@ -107,11 +108,9 @@ class AutoNickSync(commands.Cog):
         if not target_role:
             return await interaction.followup.send(f"❌ Hedef rol (`ID: {TARGET_ROLE_ID}`) sunucuda bulunamadı!", ephemeral=True)
 
-        # Sunucunun tüm üyelerini önbelleğe al
         if not guild.chunked:
             await guild.chunk()
 
-        # Sadece hedef role sahip, bot olmayan ve botun değiştirebileceği üyeleri filtrele
         eligible_members = [
             m for m in target_role.members 
             if not m.bot and m.id != guild.owner_id and m.top_role < guild.me.top_role
@@ -142,15 +141,15 @@ class AutoNickSync(commands.Cog):
                 except Exception:
                     failed_count += 1
 
-        # 5'erli paralel demetler (Batch) halinde hızlı işlem
-        batch_size = 5
+        # Rate limit koruması için 2'şerli gruplarla güvenli ilerleme
+        batch_size = 2
         for i in range(0, len(eligible_members), batch_size):
             batch = eligible_members[i:i + batch_size]
             await asyncio.gather(*(process_member(m) for m in batch))
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(1.0)
 
         embed = discord.Embed(
-            title="⚡ Hızlı Takma Ad Senkronizasyonu Tamamlandı",
+            title="⚡ Takma Ad Senkronizasyonu Tamamlandı",
             color=config.COLOR_HEX
         )
         embed.add_field(name="🎯 Taranan Hedef Üye", value=f"`{len(eligible_members)} Kişi`", inline=False)
