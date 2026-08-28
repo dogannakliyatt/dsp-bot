@@ -2,6 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import asyncio
+import datetime
 import config
 
 class ClearCommands(commands.Cog):
@@ -16,18 +17,25 @@ class ClearCommands(commands.Cog):
     async def purge_messages(self, channel, amount: int):
         deleted_count = 0
         remaining = amount
+        fourteen_days_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=14)
 
         while remaining > 0:
             limit = min(remaining, 100)
             try:
-                deleted = await channel.purge(limit=limit, bulk=True)
+                deleted = await channel.purge(
+                    limit=limit, 
+                    bulk=True,
+                    after=fourteen_days_ago
+                )
                 if not deleted:
                     break
                 deleted_count += len(deleted)
                 remaining -= len(deleted)
                 if len(deleted) < limit:
                     break
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.5)
+            except discord.HTTPException:
+                break
             except Exception:
                 break
 
@@ -79,7 +87,8 @@ class ClearCommands(commands.Cog):
             return
 
         silinen = await self.purge_messages(ctx.channel, sayi)
-        success_msg = await ctx.send(f"✅ **{silinen} Adet Mesaj Başarıyla Silinmiştir.**")
+        note = " *(14 günden eski mesajlar toplu silinemez)*" if silinen < sayi else ""
+        success_msg = await ctx.send(f"✅ **{silinen} Adet Mesaj Başarıyla Silinmiştir.**{note}")
         await asyncio.sleep(3)
         try:
             await success_msg.delete()
@@ -100,7 +109,8 @@ class ClearCommands(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
         silinen = await self.purge_messages(interaction.channel, mesajsayisi)
-        await interaction.followup.send(f"✅ **{silinen} Adet Mesaj Başarıyla Silinmiştir.**", ephemeral=True)
+        note = "\n⚠️ *(Discord politikası gereği 14 günden eski mesajlar toplu silinemez)*" if silinen < mesajsayisi else ""
+        await interaction.followup.send(f"✅ **{silinen} Adet Mesaj Başarıyla Silinmiştir.**{note}", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(ClearCommands(bot))
