@@ -4,6 +4,7 @@ from discord.ext import commands
 import io
 import csv
 import datetime
+import asyncio
 import config
 import database
 
@@ -74,17 +75,7 @@ class RPTools(commands.Cog):
             timestamp=datetime.datetime.now(datetime.timezone.utc)
         )
 
-        rp_roles_map = {
-            "Cumhurbaşkanı": 1537149921541492836,
-            "Cumhurbaşkanı Yardımcısı": 1537595817429569706,
-            "Başbakan": 1537149991146229810,
-            "Kabine Üyeleri (Bakanlar)": 1537150254833467502,
-            "İstanbul Büyükşehir Belediye Başkanı": 1537151635170525334,
-            "Ankara Büyükşehir Belediye Başkanı": 1537151839881924691,
-            "İzmir Büyükşehir Belediye Başkanı": 1537151887231426620,
-            "Bursa Büyükşehir Belediye Başkanı": 1537151950884175872,
-        }
-
+        rp_roles_map = getattr(config, "CABINET_ROLES", {})
         for title, role_id in rp_roles_map.items():
             role = interaction.guild.get_role(role_id)
             if role and role.members:
@@ -104,17 +95,7 @@ class RPTools(commands.Cog):
             timestamp=datetime.datetime.now(datetime.timezone.utc)
         )
 
-        party_roles_map = {
-            "Genel Başkan": 1537148955840741376,
-            "Genel Başkanvekili": 1537149075194118248,
-            "Parti Genel Sekreteri": 1537149226990182450,
-            "MYK Başkanı": 1537149324473929778,
-            "Genel Başkan Yardımcıları": 1537149477796970686,
-            "Parti Sözcüsü": 1537149604343316572,
-            "Gençlik Kolları Başkanı": 1537149684345475123,
-            "Merkez Yürütme Kurulu Üyesi (MYKÜ)": 1537149762913046568
-        }
-
+        party_roles_map = getattr(config, "PARTY_STRUCTURE_ROLES", {})
         for title, role_id in party_roles_map.items():
             role = interaction.guild.get_role(role_id)
             if role and role.members:
@@ -122,7 +103,6 @@ class RPTools(commands.Cog):
             else:
                 members_str = "*Atama Yapılmadı*"
             
-            # Makamlar arasına 1 satır temiz boşluk ekleme
             embed.add_field(name=f"📌 {title}", value=f"{members_str}\n\u200b", inline=False)
 
         embed.set_footer(text="Demokratik Sol Parti Resmi Yönetim Şeması")
@@ -136,15 +116,7 @@ class RPTools(commands.Cog):
             timestamp=datetime.datetime.now(datetime.timezone.utc)
         )
 
-        tbmm_map = {
-            "TBMM Başkanı": 1537150038512242740,
-            "TBMM Başkanvekili": 1537150202857787402,
-            "TBMM Kâtibi": 1537154296737701960,
-            "Meclis Grup Başkanı": 1537150788533485578,
-            "Meclis Grup Başkanvekili": 1537150854786719875,
-            "Milletvekilleri": 1537150966535553035
-        }
-
+        tbmm_map = getattr(config, "PARLIAMENT_ROLES", {})
         for title, role_id in tbmm_map.items():
             role = interaction.guild.get_role(role_id)
             if role and role.members:
@@ -160,7 +132,7 @@ class RPTools(commands.Cog):
     @app_commands.command(name="sicil", description="Bir kullanıcının sunucudaki kayıt geçmişini ve sicilini görüntüler.")
     @app_commands.describe(kullanıcı="Sicili sorgulanacak kullanıcı")
     async def sicil(self, interaction: discord.Interaction, kullanıcı: discord.Member):
-        records = database.get_user_history(kullanıcı.id)
+        records = await asyncio.to_thread(database.get_user_history, kullanıcı.id)
 
         created_ts = int(kullanıcı.created_at.timestamp())
         joined_ts = int(kullanıcı.joined_at.timestamp()) if kullanıcı.joined_at else None
@@ -197,7 +169,7 @@ class RPTools(commands.Cog):
             return await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz yok.", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
-        records = database.export_all_registers()
+        records = await asyncio.to_thread(database.export_all_registers)
 
         if not records:
             return await interaction.followup.send("❌ Veritabanında kayıt bulunamadı.", ephemeral=True)
