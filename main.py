@@ -1,10 +1,10 @@
 import os
 import discord
 from discord.ext import commands
-from discord import app_commands
 import datetime
 import config
 from keep_alive import keep_alive
+from persistent_views import register_all_persistent_views
 
 AUDIT_LOG_CHANNEL_ID = getattr(config, "AUDIT_LOG_CHANNEL_ID", 1541807577837342834)
 
@@ -24,6 +24,10 @@ class BotClient(commands.Bot):
         )
 
     async def setup_hook(self):
+        # 1. Buton ve Menü Koruma Sistemini Başlat
+        await register_all_persistent_views(self)
+
+        # 2. Komut Modüllerini Yükle
         commands_dir = os.path.join(os.path.dirname(__file__), "commands")
         if os.path.exists(commands_dir):
             for filename in os.listdir(commands_dir):
@@ -39,7 +43,6 @@ class BotClient(commands.Bot):
         print(f"✅ Bot Başarıyla Giriş Yaptı: {self.user} (ID: {self.user.id})")
         print("--------------------------------------------------")
         
-        # Komutları Global olarak senkronize et (Rate limit'e girmemesi için guild loop kaldırıldı)
         try:
             synced = await self.tree.sync()
             print(f"🔄 {len(synced)} adet komut başarıyla senkronize edildi.")
