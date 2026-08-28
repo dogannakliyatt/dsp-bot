@@ -28,8 +28,8 @@ class CounterCommands(commands.Cog):
 
         msg = ""
         for idx, row in enumerate(rows[:10], start=1):
-            staff_id = row["staff_id"] if isinstance(row, dict) or hasattr(row, "keys") else row[0]
-            count = row["count"] if isinstance(row, dict) or hasattr(row, "keys") else row[1]
+            staff_id = row["staff_id"]
+            count = row["count"]
             
             user = interaction.guild.get_member(staff_id)
             user_str = user.mention if user else f"`ID: {staff_id}`"
