@@ -27,11 +27,14 @@ class MemberLogs(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
+        if member.bot:
+            return
+
         # 1. Otomatik Kayıtsız Rolü Verme
         unreg_role_id = getattr(config, "UNREGISTERED_ROLE_ID", None)
         if unreg_role_id:
             unreg_role = member.guild.get_role(unreg_role_id)
-            if unreg_role:
+            if unreg_role and unreg_role < member.guild.me.top_role:
                 try:
                     await member.add_roles(unreg_role, reason="Yeni üye katıldı (Oto Kayıtsız Rol).")
                 except Exception:
@@ -84,6 +87,9 @@ class MemberLogs(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
+        if member.bot:
+            return
+
         log_channel = member.guild.get_channel(LOG_CHANNEL_ID)
         if log_channel:
             total_members = member.guild.member_count
