@@ -3,10 +3,10 @@ from discord.ext import commands
 import datetime
 import config
 
-LOG_CHANNEL_ID = 1537161700380377138
-AUTOPING_CHANNEL_ID = 1537158034294448128
-WELCOME_CHANNEL_ID = 1537157370264944690
-STAFF_ROLE_ID = 1537129117152055426
+LOG_CHANNEL_ID = getattr(config, "MEMBER_LOG_CHANNEL_ID", 1537161700380377138)
+AUTOPING_CHANNEL_ID = getattr(config, "AUTOPING_CHANNEL_ID", 1537158034294448128)
+WELCOME_CHANNEL_ID = getattr(config, "WELCOME_CHANNEL_ID", 1537157370264944690)
+STAFF_ROLE_ID = getattr(config, "STAFF_ROLE_ID", 1537129117152055426)
 
 def calculate_account_age(created_at: datetime.datetime):
     now = datetime.datetime.now(datetime.timezone.utc)
