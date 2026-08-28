@@ -40,7 +40,6 @@ def init_db():
     if not DATABASE_URL:
         return
     with get_db_cursor(commit=True) as cursor:
-        # Tabloları oluştur
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS registers (
                 id SERIAL PRIMARY KEY,
@@ -104,10 +103,22 @@ def init_db():
             );
         ''')
 
-        # Eski tablolara eksik sütunları otomatik ekleme (Migration)
         cursor.execute('''
             ALTER TABLE polls ADD COLUMN IF NOT EXISTS target_role_id BIGINT DEFAULT NULL;
             ALTER TABLE poll_votes ADD COLUMN IF NOT EXISTS candidate_id INTEGER DEFAULT NULL;
+        ''')
+
+        # İstatistik ve Bilgi Kanalları Ayarları Tablosu
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS server_stats_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+        ''')
+        cursor.execute('''
+            INSERT INTO server_stats_settings (key, value)
+            VALUES ('ideology', 'Sosyal Demokrasi'), ('compass', 'Merkez Sol')
+            ON CONFLICT (key) DO NOTHING;
         ''')
 
 def add_register(user_id, username, new_nick, parti_name, parti_code, rp_name, rp_code, roles_given, staff_id):
@@ -252,6 +263,22 @@ def get_giveaway_participants(giveaway_id):
     with get_db_cursor(commit=False) as cursor:
         cursor.execute("SELECT user_id FROM giveaway_participants WHERE giveaway_id = %s", (giveaway_id,))
         return [row["user_id"] for row in cursor.fetchall()]
+
+# --- İSTATİSTİK VE BİLGİ KANALLARI AYARLARI ---
+
+def get_stat_setting(key: str, default: str = "") -> str:
+    with get_db_cursor(commit=False) as cursor:
+        cursor.execute("SELECT value FROM server_stats_settings WHERE key = %s", (key,))
+        row = cursor.fetchone()
+        return row["value"] if row else default
+
+def set_stat_setting(key: str, value: str):
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute('''
+            INSERT INTO server_stats_settings (key, value)
+            VALUES (%s, %s)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+        ''', (key, value))
 
 try:
     init_db()
