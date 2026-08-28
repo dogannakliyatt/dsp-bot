@@ -215,6 +215,8 @@ class GiveawayView(discord.ui.View):
         
         end_dt = ensure_utc(data["end_time"])
         end_ts = int(end_dt.timestamp())
+        host_user = interaction.guild.get_member(data["host_id"])
+        
         embed = discord.Embed(
             title="🎁 ÇEKİLİŞ ETKİNLİĞİ",
             description="Çekilişe katılmak veya katılımınızı geri çekmek için aşağıdaki **Katıl** butonuna tıklayabilirsiniz.\n",
@@ -226,7 +228,10 @@ class GiveawayView(discord.ui.View):
         embed.add_field(name="🏆 Kazanan Sayısı", value=f"`{data['winners_count']} Kişi`", inline=True)
         embed.add_field(name="👥 Katılımcılar", value=f"`{len(participants)} Kişi`", inline=True)
         embed.add_field(name="⏳ Bitiş", value=f"<t:{end_ts}:R>", inline=True)
-        embed.set_footer(text="Bitiş Zamanı")
+        if host_user:
+            embed.set_footer(text=f"Düzenleyen: {host_user.display_name} • Bitiş Zamanı", icon_url=host_user.display_avatar.url)
+        else:
+            embed.set_footer(text="Bitiş Zamanı")
 
         try:
             await interaction.response.edit_message(embed=embed, view=self)
@@ -271,6 +276,7 @@ class GiveawayCog(commands.Cog):
             participants = database.get_giveaway_participants(data["giveaway_id"])
             end_dt = ensure_utc(data["end_time"])
             end_ts = int(end_dt.timestamp())
+            host_user = channel.guild.get_member(data["host_id"])
 
             embed = discord.Embed(
                 title="🎁 ÇEKİLİŞ ETKİNLİĞİ",
@@ -283,8 +289,10 @@ class GiveawayCog(commands.Cog):
             embed.add_field(name="🏆 Kazanan Sayısı", value=f"`{data['winners_count']} Kişi`", inline=True)
             embed.add_field(name="👥 Katılımcılar", value=f"`{len(participants)} Kişi`", inline=True)
             embed.add_field(name="⏳ Bitiş", value=f"<t:{end_ts}:R>", inline=True)
+            if host_user:
+                embed.set_footer(text=f"Düzenleyen: {host_user.display_name} • Bitiş Zamanı", icon_url=host_user.display_avatar.url)
 
-            view = GiveawayView(guild_id)
+            view = GiveawayView(guild_id=guild_id)
             view.children[0].label = f"Çekilişe Katıl ({len(participants)})"
             await msg.edit(embed=embed, view=view)
         except Exception:
@@ -317,7 +325,7 @@ class GiveawayCog(commands.Cog):
             return
 
         participants = database.get_giveaway_participants(giveaway_id)
-        view = GiveawayView(guild_id)
+        view = GiveawayView(guild_id=guild_id)
         for item in view.children:
             item.disabled = True
             if isinstance(item, discord.ui.Button):
@@ -444,7 +452,7 @@ class GiveawayCog(commands.Cog):
         if channel and data["message_id"]:
             try:
                 msg = await channel.fetch_message(data["message_id"])
-                view = GiveawayView(guild_id)
+                view = GiveawayView(guild_id=guild_id)
                 for item in view.children:
                     item.disabled = True
                     if isinstance(item, discord.ui.Button):
