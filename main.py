@@ -24,7 +24,6 @@ class BotClient(commands.Bot):
         )
 
     async def setup_hook(self):
-        # commands/ klasöründeki cog modüllerini yükle
         commands_dir = os.path.join(os.path.dirname(__file__), "commands")
         if os.path.exists(commands_dir):
             for filename in os.listdir(commands_dir):
@@ -40,17 +39,15 @@ class BotClient(commands.Bot):
         print(f"✅ Bot Başarıyla Giriş Yaptı: {self.user} (ID: {self.user.id})")
         print("--------------------------------------------------")
         
-        # 1. Eski sunucu-özel (Guild) artıklarını temizle
-        for guild in self.guilds:
-            self.tree.clear_commands(guild=guild)
-            await self.tree.sync(guild=guild)
-
-        # 2. Komutları Global olarak senkronize et
-        synced = await self.tree.sync()
-        print(f"🔄 {len(synced)} adet komut başarıyla senkronize edildi.")
+        # Komutları Global olarak senkronize et (Rate limit'e girmemesi için guild loop kaldırıldı)
+        try:
+            synced = await self.tree.sync()
+            print(f"🔄 {len(synced)} adet komut başarıyla senkronize edildi.")
+        except Exception as e:
+            print(f"❌ Komut senkronizasyon hatası: {e}")
+            
         print("--------------------------------------------------")
         
-        # Bot Durumu (Aktivite)
         activity = discord.Activity(
             type=discord.ActivityType.watching, 
             name="Demokratik Sol Parti"
@@ -63,17 +60,15 @@ bot = BotClient()
 # 📊 MERKEZİ LOG VE RAPORLAMA SİSTEMİ
 # ==========================================
 
-# 1. TÜM SLASH ( / ) ETKİLEŞİMLERİNİ YAKALAYIP RAPORLAMA (bot.listen kullanılmalı!)
 @bot.listen("on_interaction")
 async def log_interaction_listener(interaction: discord.Interaction):
     if interaction.type == discord.InteractionType.application_command:
         cmd_name = interaction.data.get("name", "bilinmeyen-komut")
         
-        # Kayıt ve İsim Değiştirme kendi özel raporunu attığı için çift log önleme
         if cmd_name.lower() in ["kayıt", "kayit", "isimdegistir", "kayıtsızver"]:
             return
 
-        log_channel = interaction.guild.get_channel(AUDIT_LOG_CHANNEL_ID)
+        log_channel = interaction.guild.get_channel(AUDIT_LOG_CHANNEL_ID) if interaction.guild else None
         if log_channel:
             options = interaction.data.get("options", [])
             params_list = []
@@ -118,14 +113,12 @@ async def log_interaction_listener(interaction: discord.Interaction):
             except Exception:
                 pass
 
-
-# 2. TÜM PREFIX ( d! / D! ) KOMUTLARININ RAPORLANMASI
 @bot.listen("on_command_completion")
 async def log_command_listener(ctx: commands.Context):
-    if ctx.command.name in ["isimdeğistir", "isimdegistir", "rolver", "rolal"]:
+    if ctx.command.name in ["isimdeğistir", "isimdegistir", "rolver", "rolal", "sil", "temizle", "clear"]:
         return
 
-    log_channel = ctx.guild.get_channel(AUDIT_LOG_CHANNEL_ID)
+    log_channel = ctx.guild.get_channel(AUDIT_LOG_CHANNEL_ID) if ctx.guild else None
     if not log_channel:
         return
 
@@ -151,15 +144,13 @@ async def log_command_listener(ctx: commands.Context):
     except Exception:
         pass
 
-
-# 3. TOPLU MESAJ SİLME RAPORU
 @bot.listen("on_bulk_message_delete")
 async def log_bulk_delete_listener(messages):
     if not messages:
         return
     guild = messages[0].guild
     channel = messages[0].channel
-    log_channel = guild.get_channel(AUDIT_LOG_CHANNEL_ID)
+    log_channel = guild.get_channel(AUDIT_LOG_CHANNEL_ID) if guild else None
     if not log_channel:
         return
 
@@ -175,7 +166,6 @@ async def log_bulk_delete_listener(messages):
         await log_channel.send(embed=embed)
     except Exception:
         pass
-
 
 if __name__ == "__main__":
     keep_alive()
