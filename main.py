@@ -43,14 +43,6 @@ class BotClient(commands.Bot):
         print(f"✅ Bot Başarıyla Giriş Yaptı: {self.user} (ID: {self.user.id})")
         print("--------------------------------------------------")
         
-        try:
-            synced = await self.tree.sync()
-            print(f"🔄 {len(synced)} adet komut başarıyla senkronize edildi.")
-        except Exception as e:
-            print(f"❌ Komut senkronizasyon hatası: {e}")
-            
-        print("--------------------------------------------------")
-        
         activity = discord.Activity(
             type=discord.ActivityType.watching, 
             name="Demokratik Sol Parti"
@@ -58,6 +50,18 @@ class BotClient(commands.Bot):
         await self.change_presence(status=discord.Status.online, activity=activity)
 
 bot = BotClient()
+
+# ==========================================
+# 🛠️ MANUEL SLASH KOMUT SENKRONİZASYON KOMUTU
+# ==========================================
+@bot.command(name="sync")
+@commands.is_owner()
+async def sync_commands(ctx: commands.Context):
+    try:
+        synced = await bot.tree.sync()
+        await ctx.reply(f"🔄 **{len(synced)}** adet slash komutu başarıyla senkronize edildi.", mention_author=False)
+    except Exception as e:
+        await ctx.reply(f"❌ Senkronizasyon hatası: {e}", mention_author=False)
 
 # ==========================================
 # 📊 MERKEZİ LOG VE RAPORLAMA SİSTEMİ
@@ -118,7 +122,7 @@ async def log_interaction_listener(interaction: discord.Interaction):
 
 @bot.listen("on_command_completion")
 async def log_command_listener(ctx: commands.Context):
-    if ctx.command.name in ["isimdeğistir", "isimdegistir", "rolver", "rolal", "sil", "temizle", "clear"]:
+    if ctx.command.name in ["isimdeğistir", "isimdegistir", "rolver", "rolal", "sil", "temizle", "clear", "sync"]:
         return
 
     log_channel = ctx.guild.get_channel(AUDIT_LOG_CHANNEL_ID) if ctx.guild else None
