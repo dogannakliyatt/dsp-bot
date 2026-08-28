@@ -79,7 +79,7 @@ class AdaySelect(discord.ui.Select):
         target_role_id = poll.get("target_role_id")
         if target_role_id:
             user_has_role = any(r.id == target_role_id for r in interaction.user.roles)
-            if not user_has_role and not interaction.user.guild_permissions.administrator:
+            if not user_has_role and not interaction.user.guild_permissions.administrator and interaction.user.id != interaction.guild.owner_id:
                 return await interaction.response.send_message(f"❌ Bu oylamada yalnızca <@&{target_role_id}> rolüne sahip üyeler oy kullanabilir.", ephemeral=True)
 
         if database.has_voted(self.poll_id, interaction.user.id):
@@ -160,6 +160,7 @@ class AdayKaldirOnayView(discord.ui.View):
             try:
                 msg = await channel.fetch_message(self.msg_id)
                 candidates = database.get_candidates(self.poll_id)
+                poll = database.get_poll_by_id(self.poll_id)
                 
                 embed = discord.Embed(
                     title=f"🗳️ {self.poll_title}",
@@ -172,6 +173,9 @@ class AdayKaldirOnayView(discord.ui.View):
                 else:
                     embed.add_field(name="Mevcut Adaylar", value="*Şu anda oylamada aday bulunmamaktadır.*", inline=False)
                 
+                if poll and poll.get("target_role_id"):
+                    embed.add_field(name="🔒 Kısıtlama", value=f"Yalnızca <@&{poll['target_role_id']}> rolüne sahip üyeler oy kullanabilir.", inline=False)
+
                 embed.set_footer(text="Her kullanıcının 1 oy hakkı vardır ve kullanılan oylar değiştirilemez.")
 
                 view = OylamaView(self.poll_id, self.poll_title)
