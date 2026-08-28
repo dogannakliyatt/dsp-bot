@@ -4,34 +4,28 @@ from discord import app_commands
 import datetime
 import config
 
-REPORT_LOG_CHANNEL_ID = 1541807577837342834
-DISCORD_NICK_LIMIT = 32  # Discord takma ad maksimum karakter sınırı
+REPORT_LOG_CHANNEL_ID = getattr(config, "REPORT_LOG_CHANNEL_ID", 1541807577837342834)
+DISCORD_NICK_LIMIT = 32
 
 class NicknameManagement(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # Ortak Güvenlik ve İsim Değiştirme Mantığı
     async def process_name_change(self, author: discord.Member, target: discord.Member, new_name: str, guild: discord.Guild):
-        # 1. Kural: Karakter Sınırı Kontrolü (Discord Max: 32 Karakter)
         if len(new_name) > DISCORD_NICK_LIMIT:
             return False, f"❌ **Karakter Sınırı Aşıldı!**\nDiscord takma ad sınırı en fazla **{DISCORD_NICK_LIMIT}** karakterdir. Girdiğiniz isim **{len(new_name)}** karakter."
 
-        # 2. Kural: Yetkili kendi rolüne eşit veya üstündeki birine işlem yapamaz (Sunucu Sahibi hariç)
         if author.id != guild.owner_id and target.top_role >= author.top_role:
             return False, "❌ Rol hiyerarşisi nedeniyle kendi rolünüzle **aynı seviyede** veya sizden **daha üst seviyedeki** birinin ismini değiştiremezsiniz!"
 
-        # 3. Kural: Sunucu sahibinin ismi bot tarafından değiştirilemez
         if target.id == guild.owner_id:
             return False, "❌ Sunucu sahibinin takma adı Discord kısıtlamaları nedeniyle bot tarafından değiştirilemez!"
 
-        # 4. Kural: Botun rol hiyerarşisi kontrolü
         if target.top_role >= guild.me.top_role:
             return False, "❌ Botun rol yetkisi bu kullanıcının ismini değiştirmeye yetmiyor. Lütfen botun rolünü daha yukarı taşıyın!"
 
         old_name = target.display_name
 
-        # Takma adı değiştir
         try:
             await target.edit(nick=new_name, reason=f"İsim Değiştirme: {author} ({author.id}) tarafından yapıldı.")
         except discord.Forbidden:
@@ -39,7 +33,6 @@ class NicknameManagement(commands.Cog):
         except Exception as e:
             return False, f"❌ İsim değiştirilirken bir hata oluştu: {e}"
 
-        # 1541807577837342834 ID'li Kanala Rapor Gönderme
         report_channel = guild.get_channel(REPORT_LOG_CHANNEL_ID)
         if report_channel is None:
             try:
@@ -67,7 +60,6 @@ class NicknameManagement(commands.Cog):
 
         return True, f"{target.mention} kullanıcısının ismi başarıyla **{new_name}** olarak güncellendi."
 
-    # ------------------ /isimdegistir SLASH KOMUTU ------------------
     @app_commands.command(name="isimdegistir", description="Kullanıcının takma adını günceller.")
     @app_commands.describe(
         kullanıcı="İsmi değiştirilecek üye",
@@ -90,7 +82,6 @@ class NicknameManagement(commands.Cog):
         embed.set_footer(text=f"İşlemi Yapan: {interaction.user.display_name}")
         await interaction.followup.send(embed=embed)
 
-    # ------------------ d!isimdeğistir / D!isimdeğistir / d!isimdegistir / D!isimdegistir METİN KOMUTLARI ------------------
     @commands.command(name="isimdeğistir", aliases=["İsimdeğistir", "İSİMDEĞİSTİR", "isimdegistir", "İsimdegistir", "İSİMDEGİSTİR"])
     async def isimdegistir_prefix(self, ctx: commands.Context, kullanıcı: discord.Member = None, *, yeni_isim: str = None):
         if kullanıcı is None or yeni_isim is None:
