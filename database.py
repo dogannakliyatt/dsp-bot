@@ -123,6 +123,10 @@ def add_candidate(poll_id, name):
     with get_db_cursor(commit=True) as cursor:
         cursor.execute("INSERT INTO poll_candidates (poll_id, name) VALUES (%s, %s)", (poll_id, name))
 
+def remove_candidate(poll_id, candidate_id):
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute("DELETE FROM poll_candidates WHERE poll_id = %s AND candidate_id = %s", (poll_id, candidate_id))
+
 def get_candidates(poll_id):
     with get_db_cursor(commit=False) as cursor:
         cursor.execute("SELECT candidate_id, name, votes FROM poll_candidates WHERE poll_id = %s", (poll_id,))
