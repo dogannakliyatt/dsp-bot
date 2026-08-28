@@ -159,14 +159,18 @@ class RPTools(commands.Cog):
     async def sicil(self, interaction: discord.Interaction, kullanıcı: discord.Member):
         records = database.get_user_history(kullanıcı.id)
 
+        created_ts = int(kullanıcı.created_at.timestamp())
+        joined_ts = int(kullanıcı.joined_at.timestamp()) if kullanıcı.joined_at else None
+
         embed = discord.Embed(
             title=f"📋 Kullanıcı Sicil ve Kayıt Kartı: {kullanıcı.display_name}",
             color=config.COLOR_HEX,
             timestamp=datetime.datetime.now(datetime.timezone.utc)
         )
         embed.set_thumbnail(url=kullanıcı.display_avatar.url)
-        embed.add_field(name="Kullanıcı", value=f"{kullanıcı.mention} (`{kullanıcı.id}`)", inline=True)
-        embed.add_field(name="Sunucuya Katılım", value=f"<t:{int(kullanıcı.joined_at.timestamp())}:R>" if kullanıcı.joined_at else "Bilinmiyor", inline=True)
+        embed.add_field(name="Kullanıcı", value=f"{kullanıcı.mention} (`{kullanıcı.id}`)", inline=False)
+        embed.add_field(name="Hesap Oluşturulma", value=f"<t:{created_ts}:F>\n(<t:{created_ts}:R>)", inline=True)
+        embed.add_field(name="Sunucuya Katılım", value=f"<t:{joined_ts}:F>\n(<t:{joined_ts}:R>)" if joined_ts else "Bilinmiyor", inline=True)
 
         if not records:
             embed.add_field(name="Kayıt Geçmişi", value="*Veritabanında kayıt işlemi bulunamadı (Eski veya manuel kaydedilmiş).*", inline=False)
