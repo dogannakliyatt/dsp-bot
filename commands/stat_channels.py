@@ -5,7 +5,7 @@ import asyncio
 import config
 import database
 
-GB_ROLE_IDS = getattr(config, "GB_ROLE_IDS", [1537148955840741376, 1537153445067489321])
+GB_ROLE_ID = getattr(config, "GB_ROLE_ID", 1537148955840741376)
 GB_CHANNEL_ID = getattr(config, "STAT_GB_CHANNEL_ID", 1542970479520911360)
 IDEOLOGY_CHANNEL_ID = getattr(config, "STAT_IDEOLOGY_CHANNEL_ID", 1542970703890878505)
 COMPASS_CHANNEL_ID = getattr(config, "STAT_COMPASS_CHANNEL_ID", 1542971033936592906)
@@ -24,12 +24,6 @@ class StatChannels(commands.Cog):
             return ""
         return display_name.split("/")[0].strip()
 
-    def has_any_gb_role(self, member: discord.Member) -> bool:
-        if not member or member.bot:
-            return False
-        user_role_ids = {r.id for r in member.roles}
-        return any(gb_id in user_role_ids for gb_id in GB_ROLE_IDS)
-
     # ==========================================
     # 🔧 KANAL İSİM GÜNCELLEME MOTORU
     # ==========================================
@@ -39,23 +33,16 @@ class StatChannels(commands.Cog):
         if not channel:
             return
 
-        if not guild.chunked:
-            try:
-                await guild.chunk()
-            except Exception:
-                pass
+        gb_role = guild.get_role(GB_ROLE_ID)
+        names = []
+        if gb_role:
+            for member in gb_role.members:
+                if not member.bot:
+                    clean = self.get_clean_name(member.display_name)
+                    if clean:
+                        names.append(clean)
 
-        gb_members = []
-        seen_ids = set()
-
-        for member in guild.members:
-            if not member.bot and self.has_any_gb_role(member) and member.id not in seen_ids:
-                seen_ids.add(member.id)
-                clean = self.get_clean_name(member.display_name)
-                if clean:
-                    gb_members.append(clean)
-
-        new_name = f"👑︱GB: {' - '.join(gb_members)}" if gb_members else "👑︱GB:"
+        new_name = f"👑︱GB: {' - '.join(names)}" if names else "👑︱GB:"
         new_name = new_name[:99]
 
         if channel.name != new_name:
@@ -128,13 +115,18 @@ class StatChannels(commands.Cog):
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
         await self.update_member_count_channel(member.guild)
-        if self.has_any_gb_role(member):
+        gb_role = member.guild.get_role(GB_ROLE_ID)
+        if gb_role and gb_role in member.roles:
             await self.update_gb_channel(member.guild)
 
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
-        had_gb = self.has_any_gb_role(before)
-        has_gb = self.has_any_gb_role(after)
+        gb_role = after.guild.get_role(GB_ROLE_ID)
+        if not gb_role:
+            return
+
+        had_gb = gb_role in before.roles
+        has_gb = gb_role in after.roles
 
         if (had_gb != has_gb) or (has_gb and before.display_name != after.display_name):
             await self.update_gb_channel(after.guild)
