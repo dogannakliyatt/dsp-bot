@@ -7,6 +7,11 @@ import datetime
 
 TARGET_ROLE_ID = 1537153933305315328
 
+def create_progress_bar(pct: float, length: int = 10) -> str:
+    filled = int(round(length * (pct / 100)))
+    bar = "█" * filled + "░" * (length - filled)
+    return f"`[{bar}]`"
+
 class OyOnayView(discord.ui.View):
     def __init__(self, poll_id: int, candidate_id: int, candidate_name: str, poll_title: str):
         super().__init__(timeout=60)
@@ -67,6 +72,16 @@ class AdaySelect(discord.ui.Select):
         self.poll_title = poll_title
 
     async def callback(self, interaction: discord.Interaction):
+        poll = database.get_poll_by_id(self.poll_id)
+        if not poll:
+            return await interaction.response.send_message("❌ Oylama bulunamadı.", ephemeral=True)
+
+        target_role_id = poll.get("target_role_id")
+        if target_role_id:
+            user_has_role = any(r.id == target_role_id for r in interaction.user.roles)
+            if not user_has_role and not interaction.user.guild_permissions.administrator:
+                return await interaction.response.send_message(f"❌ Bu oylamada yalnızca <@&{target_role_id}> rolüne sahip üyeler oy kullanabilir.", ephemeral=True)
+
         if database.has_voted(self.poll_id, interaction.user.id):
             return await interaction.response.send_message("❌ Daha önce bu oylamada oy kullandınız. Tekrar oy kullanamazsınız!", ephemeral=True)
 
@@ -140,7 +155,6 @@ class AdayKaldirOnayView(discord.ui.View):
     async def evet_kaldir(self, interaction: discord.Interaction, button: discord.ui.Button):
         database.remove_candidate(self.poll_id, self.candidate_id)
 
-        # Oylama kutusundaki embed ve select menüsünü canlı güncelle
         channel = interaction.guild.get_channel(self.ch_id)
         if channel and self.msg_id:
             try:
@@ -195,7 +209,6 @@ class PollCommands(commands.Cog):
         return choices[:25]
 
     async def candidate_autocomplete(self, interaction: discord.Interaction, current: str):
-        # Seçilen oylama parametresini yakala
         selected_poll = interaction.namespace.oylama
         if not selected_poll:
             return []
@@ -215,18 +228,25 @@ class PollCommands(commands.Cog):
         return choices[:25]
 
     @app_commands.command(name="oylamabaşlat", description="Yeni bir oylama başlatır.")
-    @app_commands.describe(baslik="Oylama başlığı / konusu", kanal="Oylama panelinin gönderileceği kanal")
-    async def oylama_baslat(self, interaction: discord.Interaction, baslik: str, kanal: discord.TextChannel):
+    @app_commands.describe(
+        baslik="Oylama başlığı / konusu", 
+        kanal="Oylama panelinin gönderileceği kanal",
+        oy_kullanabilecek_rol="Sadece bu role sahip olanlar oy kullanabilir (Boş bırakılırsa herkese açık)"
+    )
+    async def oylama_baslat(self, interaction: discord.Interaction, baslik: str, kanal: discord.TextChannel, oy_kullanabilecek_rol: discord.Role = None):
         if not self.is_authorized(interaction):
             return await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz yok.", ephemeral=True)
 
-        poll_id = database.add_poll(baslik, kanal.id)
+        target_role_id = oy_kullanabilecek_rol.id if oy_kullanabilecek_rol else None
+        poll_id = database.add_poll(baslik, kanal.id, target_role_id)
 
         embed = discord.Embed(
             title=f"🗳️ {baslik}",
             description="Aşağıdaki açılır menüden oy vermek istediğiniz adayı seçebilirsiniz.\n\n*Adaylar eklendikçe menü güncellenecektir.*",
             color=config.COLOR_HEX
         )
+        if oy_kullanabilecek_rol:
+            embed.add_field(name="🔒 Kısıtlama", value=f"Yalnızca {oy_kullanabilecek_rol.mention} rolüne sahip üyeler oy kullanabilir.", inline=False)
         embed.set_footer(text="Her kullanıcının 1 oy hakkı vardır ve kullanılan oylar değiştirilemez.")
 
         view = OylamaView(poll_id, baslik)
@@ -270,6 +290,8 @@ class PollCommands(commands.Cog):
                 )
                 cand_list = "\n".join([f"• **{c['name']}**" for c in candidates])
                 embed.add_field(name="Mevcut Adaylar", value=cand_list, inline=False)
+                if poll.get("target_role_id"):
+                    embed.add_field(name="🔒 Kısıtlama", value=f"Yalnızca <@&{poll['target_role_id']}> rolüne sahip üyeler oy kullanabilir.", inline=False)
                 embed.set_footer(text="Her kullanıcının 1 oy hakkı vardır ve kullanılan oylar değiştirilemez.")
 
                 view = OylamaView(poll_id, p_title)
@@ -352,7 +374,8 @@ class PollCommands(commands.Cog):
                 c_name = c["name"]
                 c_votes = c["votes"]
                 pct = (c_votes / total_votes * 100) if total_votes > 0 else 0
-                result_text += f"• **{c_name}:** {c_votes} Oy (%{pct:.1f})\n"
+                bar = create_progress_bar(pct)
+                result_text += f"• **{c_name}**: {bar} **%{pct:.1f}** ({c_votes} Oy)\n"
             res_embed.add_field(name="Aday Oy Dağılımı", value=result_text, inline=False)
         else:
             res_embed.add_field(name="Aday Oy Dağılımı", value="Hiç aday yoktu.", inline=False)
