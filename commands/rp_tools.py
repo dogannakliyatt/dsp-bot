@@ -203,7 +203,10 @@ class RPTools(commands.Cog):
             writer.writerow([r["id"], r["user_id"], r["username"], r["new_nick"], r["parti_name"], r["rp_name"], r["roles_given"], r["staff_id"], r["timestamp"]])
 
         output.seek(0)
-        file = discord.File(fp=io.BytesIO(output.getvalue().encode('utf-8-sig')), filename=f"kayit_verileri_{datetime.date.today()}.csv")
+        bytes_data = io.BytesIO(output.getvalue().encode('utf-8-sig'))
+        bytes_data.seek(0)
+        
+        file = discord.File(fp=bytes_data, filename=f"kayit_verileri_{datetime.date.today()}.csv")
         await interaction.followup.send("✅ Tüm kayıt verileri CSV dosyası olarak hazırlandı:", file=file, ephemeral=True)
 
 async def setup(bot):
