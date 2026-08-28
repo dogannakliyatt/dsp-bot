@@ -40,6 +40,7 @@ def init_db():
     if not DATABASE_URL:
         return
     with get_db_cursor(commit=True) as cursor:
+        # Tabloları oluştur
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS registers (
                 id SERIAL PRIMARY KEY,
@@ -101,6 +102,12 @@ def init_db():
                 user_id BIGINT NOT NULL,
                 PRIMARY KEY (giveaway_id, user_id)
             );
+        ''')
+
+        # Eski tablolara eksik sütunları otomatik ekleme (Migration)
+        cursor.execute('''
+            ALTER TABLE polls ADD COLUMN IF NOT EXISTS target_role_id BIGINT DEFAULT NULL;
+            ALTER TABLE poll_votes ADD COLUMN IF NOT EXISTS candidate_id INTEGER DEFAULT NULL;
         ''')
 
 def add_register(user_id, username, new_nick, parti_name, parti_code, rp_name, rp_code, roles_given, staff_id):
@@ -169,9 +176,7 @@ def add_candidate(poll_id, name):
 
 def remove_candidate(poll_id, candidate_id):
     with get_db_cursor(commit=True) as cursor:
-        # Adayı sil
         cursor.execute("DELETE FROM poll_candidates WHERE poll_id = %s AND candidate_id = %s", (poll_id, candidate_id))
-        # Silinen adaya verilen oyları da temizle ki kullanıcılar tekrar oy kullanabilsin ve oy toplamı bozulmasın
         cursor.execute("DELETE FROM poll_votes WHERE poll_id = %s AND candidate_id = %s", (poll_id, candidate_id))
 
 def get_candidates(poll_id):
