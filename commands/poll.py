@@ -5,10 +5,7 @@ import config
 import database
 import datetime
 
-# Rol ID: Oylama bitince kanalı görmesi engellenecek rol
 TARGET_ROLE_ID = 1537153933305315328
-
-# --- OY VERME VE ONAY VIEW BİLEŞENLERİ ---
 
 class OyOnayView(discord.ui.View):
     def __init__(self, poll_id: int, candidate_id: int, candidate_name: str, poll_title: str):
@@ -27,8 +24,7 @@ class OyOnayView(discord.ui.View):
         if success:
             await interaction.response.edit_message(content=f"✅ Oy verme işleminiz başarıyla kaydedildi! Tercihiniz: **{self.candidate_name}**", view=None)
             
-            # Log Kanalına Bildirim Gönderme
-            log_channel = interaction.guild.get_channel(config.POLL_LOG_CHANNEL_ID)
+            log_channel = interaction.guild.get_channel(config.POLL_LOG_CHANNEL_ID) if interaction.guild else None
             if log_channel:
                 log_embed = discord.Embed(
                     title="🗳️ Yeni Oy Kullanıldı",
@@ -54,9 +50,9 @@ class AdaySelect(discord.ui.Select):
     def __init__(self, poll_id: int, candidates: list, poll_title: str):
         options = [
             discord.SelectOption(
-                label=str(c["name"] if hasattr(c, "keys") else c[1]),
-                value=str(c["candidate_id"] if hasattr(c, "keys") else c[0]),
-                description=f"{c['name'] if hasattr(c, 'keys') else c[1]} için oy ver"
+                label=str(c["name"]),
+                value=str(c["candidate_id"]),
+                description=f"{c['name']} için oy ver"
             )
             for c in candidates
         ]
@@ -79,22 +75,19 @@ class AdaySelect(discord.ui.Select):
         
         candidate_name = "Bilinmeyen Aday"
         for c in candidates:
-            c_id = c["candidate_id"] if hasattr(c, "keys") else c[0]
-            c_name = c["name"] if hasattr(c, "keys") else c[1]
-            if c_id == selected_candidate_id:
-                candidate_name = c_name
+            if c["candidate_id"] == selected_candidate_id:
+                candidate_name = c["name"]
                 break
 
-        # Seçim arayüzünü yenile
+        # Mesajı doğrudan interaction.message ile güncelle ve etkileşimi temizce ephemeral aç
         reset_view = OylamaView(self.poll_id, self.poll_title)
         try:
-            await interaction.response.edit_message(view=reset_view)
+            await interaction.message.edit(view=reset_view)
         except Exception:
             pass
 
-        # Kullanıcıya onay penceresi gönder
         view = OyOnayView(self.poll_id, selected_candidate_id, candidate_name, self.poll_title)
-        await interaction.followup.send(
+        await interaction.response.send_message(
             content=f"**{candidate_name}** isimli adaya oy vermek istediğinize emin misiniz?",
             view=view,
             ephemeral=True
@@ -121,8 +114,8 @@ class İptalOnayView(discord.ui.View):
     async def evet_iptal(self, interaction: discord.Interaction, button: discord.ui.Button):
         poll = database.get_poll_by_id(self.poll_id)
         if poll:
-            ch_id = poll["channel_id"] if hasattr(poll, "keys") else poll[2]
-            msg_id = poll["message_id"] if hasattr(poll, "keys") else poll[3]
+            ch_id = poll["channel_id"]
+            msg_id = poll["message_id"]
             if ch_id and msg_id:
                 try:
                     ch = interaction.guild.get_channel(ch_id)
@@ -140,8 +133,6 @@ class İptalOnayView(discord.ui.View):
         await interaction.response.edit_message(content="İptal işlemi vazgeçildi.", view=None)
 
 
-# --- KOMUT SINIFI ---
-
 class PollCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -155,8 +146,8 @@ class PollCommands(commands.Cog):
         polls = database.get_active_polls()
         choices = []
         for p in polls:
-            p_id = p["poll_id"] if hasattr(p, "keys") else p[0]
-            p_title = p["title"] if hasattr(p, "keys") else p[1]
+            p_id = p["poll_id"]
+            p_title = p["title"]
             if current.lower() in p_title.lower():
                 choices.append(app_commands.Choice(name=p_title[:100], value=str(p_id)))
         return choices[:25]
@@ -198,9 +189,9 @@ class PollCommands(commands.Cog):
         if not poll:
             return await interaction.response.send_message("❌ Oylama bulunamadı.", ephemeral=True)
 
-        p_title = poll["title"] if hasattr(poll, "keys") else poll[1]
-        p_chid = poll["channel_id"] if hasattr(poll, "keys") else poll[2]
-        p_msgid = poll["message_id"] if hasattr(poll, "keys") else poll[3]
+        p_title = poll["title"]
+        p_chid = poll["channel_id"]
+        p_msgid = poll["message_id"]
 
         database.add_candidate(poll_id, aday_ismi)
 
@@ -215,7 +206,7 @@ class PollCommands(commands.Cog):
                     description="Aşağıdaki açılır menüden oy vermek istediğiniz adayı seçip oyunuzu kullanabilirsiniz.",
                     color=config.COLOR_HEX
                 )
-                cand_list = "\n".join([f"• **{c['name'] if hasattr(c, 'keys') else c[1]}**" for c in candidates])
+                cand_list = "\n".join([f"• **{c['name']}**" for c in candidates])
                 embed.add_field(name="Mevcut Adaylar", value=cand_list, inline=False)
                 embed.set_footer(text="Her kullanıcının 1 oy hakkı vardır ve kullanılan oylar değiştirilemez.")
 
@@ -242,14 +233,14 @@ class PollCommands(commands.Cog):
         if not poll:
             return await interaction.response.send_message("❌ Oylama bulunamadı.", ephemeral=True)
 
-        p_title = poll["title"] if hasattr(poll, "keys") else poll[1]
-        p_chid = poll["channel_id"] if hasattr(poll, "keys") else poll[2]
-        p_msgid = poll["message_id"] if hasattr(poll, "keys") else poll[3]
+        p_title = poll["title"]
+        p_chid = poll["channel_id"]
+        p_msgid = poll["message_id"]
 
         candidates = database.get_candidates(poll_id)
         database.close_poll(poll_id)
 
-        total_votes = sum(c["votes"] if hasattr(c, "keys") else c[2] for c in candidates)
+        total_votes = sum(c["votes"] for c in candidates)
 
         res_embed = discord.Embed(
             title=f"📊 OYLAMA SONUÇLARI: {p_title}",
@@ -259,11 +250,11 @@ class PollCommands(commands.Cog):
         res_embed.add_field(name="Toplam Kullanılan Geçerli Oy", value=f"**{total_votes}**", inline=False)
 
         if candidates:
-            sorted_cand = sorted(candidates, key=lambda x: (x["votes"] if hasattr(x, "keys") else x[2]), reverse=True)
+            sorted_cand = sorted(candidates, key=lambda x: x["votes"], reverse=True)
             result_text = ""
             for c in sorted_cand:
-                c_name = c["name"] if hasattr(c, "keys") else c[1]
-                c_votes = c["votes"] if hasattr(c, "keys") else c[2]
+                c_name = c["name"]
+                c_votes = c["votes"]
                 pct = (c_votes / total_votes * 100) if total_votes > 0 else 0
                 result_text += f"• **{c_name}:** {c_votes} Oy (%{pct:.1f})\n"
             res_embed.add_field(name="Aday Oy Dağılımı", value=result_text, inline=False)
@@ -316,7 +307,7 @@ class PollCommands(commands.Cog):
         if not poll:
             return await interaction.response.send_message("❌ Oylama bulunamadı.", ephemeral=True)
 
-        p_title = poll["title"] if hasattr(poll, "keys") else poll[1]
+        p_title = poll["title"]
         view = İptalOnayView(poll_id, p_title)
         await interaction.response.send_message(
             content=f"⚠️ **{p_title}** isimli oylamayı silmek istediğinize emin misiniz?",
