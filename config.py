@@ -62,3 +62,10 @@ RP_ROLES = {
 
 # Sabit Ses Kanalı ID
 VOICE_CHANNEL_ID = 1541892351411101827
+
+def is_authorized(user, guild) -> bool:
+    if not guild or not user:
+        return False
+    if getattr(user.guild_permissions, "administrator", False) or user.id == guild.owner_id:
+        return True
+    return any(role.id in [AUTHORIZED_ROLE_ID, STAFF_ROLE_ID] for role in user.roles)
