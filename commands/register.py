@@ -5,13 +5,11 @@ import datetime
 import config
 import database
 
-# Roller ve Kanallar
 BASE_MEMBER_ROLE_ID = 1537153933305315328
 UNREGISTERED_ROLE_ID = 1537154022497329233
 REGISTRATION_LOG_CHANNEL_ID = 1537159620374564875
 REPORT_LOG_CHANNEL_ID = 1541807577837342834
 
-# Parti Makam Rol Eşleşmeleri
 PARTY_ROLES = {
     "GB": [1537148955840741376, 1537153445067489321],
     "GBV": [1537149075194118248],
@@ -26,7 +24,6 @@ PARTY_ROLES = {
     "Üye": [1537153933305315328]
 }
 
-# RP Makam Rol Eşleşmeleri
 RP_ROLES = {
     "CB": [1537149921541492836],
     "CBY": [1537595817429569706],
@@ -49,7 +46,6 @@ class Register(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # ------------------ /kayıt KOMUTU ------------------
     @app_commands.command(name="kayıt", description="Kullanıcıyı partiye ve makamlarına kaydeder.")
     @app_commands.describe(
         kullanıcı="Kayıt edilecek üye",
@@ -101,8 +97,10 @@ class Register(commands.Cog):
         if staff_role_id:
             staff_role = interaction.guild.get_role(staff_role_id)
             if staff_role and staff_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
-                await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz yok!", ephemeral=True)
-                return
+                return await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz yok!", ephemeral=True)
+
+        if kullanıcı.top_role >= interaction.guild.me.top_role and kullanıcı.id != interaction.guild.owner_id:
+            return await interaction.response.send_message("❌ Botun yetkisi bu kullanıcıyı düzenlemeye yetmiyor!", ephemeral=True)
 
         await interaction.response.defer()
 
@@ -119,10 +117,11 @@ class Register(commands.Cog):
         if len(new_nickname) > 32:
             new_nickname = new_nickname[:32]
 
-        try:
-            await kullanıcı.edit(nick=new_nickname)
-        except Exception:
-            pass
+        if kullanıcı.id != interaction.guild.owner_id:
+            try:
+                await kullanıcı.edit(nick=new_nickname)
+            except Exception:
+                pass
 
         unreg_role = interaction.guild.get_role(UNREGISTERED_ROLE_ID)
         if unreg_role and unreg_role in kullanıcı.roles:
@@ -138,12 +137,12 @@ class Register(commands.Cog):
 
         for r_id in PARTY_ROLES.get(p_val, []):
             role_obj = interaction.guild.get_role(r_id)
-            if role_obj:
+            if role_obj and role_obj < interaction.guild.me.top_role:
                 roles_to_add.add(role_obj)
 
         for r_id in RP_ROLES.get(r_val, []):
             role_obj = interaction.guild.get_role(r_id)
-            if role_obj:
+            if role_obj and role_obj < interaction.guild.me.top_role:
                 roles_to_add.add(role_obj)
 
         if roles_to_add:
@@ -156,7 +155,6 @@ class Register(commands.Cog):
         roles_text_list = ["DSP Üyesi"] + role_names
         roles_text = ", ".join(dict.fromkeys(roles_text_list))
 
-        # Veritabanına Kayıt Ekleme (Sıralama /kayıttop için)
         try:
             database.add_register(
                 user_id=kullanıcı.id,
@@ -210,7 +208,6 @@ class Register(commands.Cog):
             except Exception as e:
                 print(f"[HATA] Kayıt log gönderilemedi: {e}")
 
-    # ------------------ /kayıtsızver KOMUTU ------------------
     @app_commands.command(name="kayıtsızver", description="Kullanıcının tüm rollerini ve takma adını sıfırlayıp kayıtsıza atar.")
     @app_commands.describe(
         kullanıcı="Kayıtsıza atılacak kullanıcı",
@@ -226,48 +223,43 @@ class Register(commands.Cog):
         if staff_role_id:
             staff_role = interaction.guild.get_role(staff_role_id)
             if staff_role and staff_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
-                await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz yok!", ephemeral=True)
-                return
+                return await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz yok!", ephemeral=True)
 
-        await interaction.response.defer()
+        if interaction.user.id != interaction.guild.owner_id and kullanıcı.top_role >= interaction.user.top_role:
+            return await interaction.response.send_message("❌ Sizden eşit veya daha üst roldeki birine bu işlemi yapamazsınız!", ephemeral=True)
 
         if kullanıcı.top_role >= interaction.guild.me.top_role:
-            await interaction.followup.send("❌ Bu kullanıcının rolü botun rolünden yüksek veya eşit olduğu için işlem yapılamaz!", ephemeral=True)
-            return
+            return await interaction.response.send_message("❌ Bu kullanıcının rolü botun rolünden yüksek veya eşit olduğu için işlem yapılamaz!", ephemeral=True)
 
         unreg_role = interaction.guild.get_role(UNREGISTERED_ROLE_ID)
         if not unreg_role:
-            await interaction.followup.send("❌ Kayıtsız rolü sunucuda bulunamadı!", ephemeral=True)
-            return
+            return await interaction.response.send_message("❌ Kayıtsız rolü sunucuda bulunamadı!", ephemeral=True)
 
-        # 1. Takma adı (sunucu içi ismi) sıfırla
-        if kullanıcı.nick:
+        await interaction.response.defer()
+
+        if kullanıcı.nick and kullanıcı.id != interaction.guild.owner_id:
             try:
                 await kullanıcı.edit(nick=None, reason=f"Kayıtsıza atıldı: {sebep}")
             except Exception as e:
                 print(f"Takma ad sıfırlanırken hata: {e}")
 
-        # 2. Alınacak rolleri belirle
-        roles_to_remove = [r for r in kullanıcı.roles if r != interaction.guild.default_role and not r.is_integration() and not r.is_bot_managed()]
+        roles_to_remove = [r for r in kullanıcı.roles if r != interaction.guild.default_role and not r.is_integration() and not r.is_bot_managed() and r < interaction.guild.me.top_role]
 
-        # 3. Rolleri al
         if roles_to_remove:
             try:
                 await kullanıcı.remove_roles(*roles_to_remove, reason=f"Kayıtsıza atıldı: {sebep}")
             except Exception as e:
                 print(f"Roller alınırken hata: {e}")
 
-        # 4. Kayıtsız rolünü ver
         try:
             await kullanıcı.add_roles(unreg_role, reason=f"Kayıtsıza atıldı: {sebep}")
         except Exception as e:
             print(f"Kayıtsız rolü verilirken hata: {e}")
 
-        # 5. Komut kanalına yanıt Embed'i
         reply_embed = discord.Embed(
             title="⚠️ Kullanıcı Kayıtsıza Atıldı",
             description=(
-                f"{kullanıcı.mention} kullanıcısının tüm rolleri alındı, takma adı sıfırlandı ve {unreg_role.mention} rolü verildi.\n\n"
+                f"{kullanıcı.mention} kullanıcısının rolleri temizlendi, takma adı sıfırlandı ve {unreg_role.mention} rolü verildi.\n\n"
                 f"**Sebep:** {sebep}"
             ),
             color=discord.Color.orange(),
@@ -276,7 +268,6 @@ class Register(commands.Cog):
         reply_embed.set_footer(text=f"İşlemi Yapan: {interaction.user.display_name}")
         await interaction.followup.send(embed=reply_embed)
 
-        # 6. Raporlama Kanalına Log Gönder
         report_channel = interaction.guild.get_channel(REPORT_LOG_CHANNEL_ID)
         if report_channel is None:
             try:
