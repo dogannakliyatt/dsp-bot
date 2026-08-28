@@ -10,6 +10,11 @@ import database
 def ensure_utc(dt):
     if dt is None:
         return datetime.datetime.now(datetime.timezone.utc)
+    if isinstance(dt, str):
+        try:
+            dt = datetime.datetime.fromisoformat(dt)
+        except Exception:
+            return datetime.datetime.now(datetime.timezone.utc)
     if isinstance(dt, datetime.datetime):
         if dt.tzinfo is None:
             return dt.replace(tzinfo=datetime.timezone.utc)
@@ -32,7 +37,14 @@ class EditPrizeModal(discord.ui.Modal, title="🎁 Ödülü Düzenle"):
 
     async def on_submit(self, interaction: discord.Interaction):
         self.data["prize"] = self.new_prize.value
-        database.update_giveaway_data(self.data["giveaway_id"], self.data["prize"], self.data["winners_count"], self.data["end_time"], self.data["requirements"])
+        await asyncio.to_thread(
+            database.update_giveaway_data,
+            self.data["giveaway_id"],
+            self.data["prize"],
+            self.data["winners_count"],
+            self.data["end_time"],
+            self.data["requirements"]
+        )
         await self.cog.update_giveaway_message(self.data["guild_id"])
         await interaction.response.send_message(f"✅ Çekiliş ödülü **{self.new_prize.value}** olarak güncellendi.", ephemeral=True)
 
@@ -57,7 +69,14 @@ class EditWinnersModal(discord.ui.Modal, title="🏆 Kazanan Sayısını Düzenl
             return await interaction.response.send_message("❌ Lütfen 1 veya daha büyük geçerli bir sayı giriniz.", ephemeral=True)
 
         self.data["winners_count"] = int(val)
-        database.update_giveaway_data(self.data["giveaway_id"], self.data["prize"], self.data["winners_count"], self.data["end_time"], self.data["requirements"])
+        await asyncio.to_thread(
+            database.update_giveaway_data,
+            self.data["giveaway_id"],
+            self.data["prize"],
+            self.data["winners_count"],
+            self.data["end_time"],
+            self.data["requirements"]
+        )
         await self.cog.update_giveaway_message(self.data["guild_id"])
         await interaction.response.send_message(f"✅ Kazanan sayısı **{val}** olarak güncellendi.", ephemeral=True)
 
@@ -79,7 +98,14 @@ class EditRequirementsModal(discord.ui.Modal, title="📋 Şartları Düzenle"):
 
     async def on_submit(self, interaction: discord.Interaction):
         self.data["requirements"] = self.new_reqs.value
-        database.update_giveaway_data(self.data["giveaway_id"], self.data["prize"], self.data["winners_count"], self.data["end_time"], self.data["requirements"])
+        await asyncio.to_thread(
+            database.update_giveaway_data,
+            self.data["giveaway_id"],
+            self.data["prize"],
+            self.data["winners_count"],
+            self.data["end_time"],
+            self.data["requirements"]
+        )
         await self.cog.update_giveaway_message(self.data["guild_id"])
         await interaction.response.send_message("✅ Katılım şartları başarıyla güncellendi.", ephemeral=True)
 
@@ -112,7 +138,15 @@ class EditTimeModal(discord.ui.Modal, title="⏳ Süre Ekle veya Azalt"):
             return await interaction.response.send_message("❌ Çekiliş bitiş zamanı şu andan daha geriye alınamaz!", ephemeral=True)
 
         self.data["end_time"] = new_end
-        database.update_giveaway_data(self.data["giveaway_id"], self.data["prize"], self.data["winners_count"], self.data["end_time"], self.data["requirements"])
+        await asyncio.to_thread(
+            database.update_giveaway_data,
+            self.data["giveaway_id"],
+            self.data["prize"],
+            self.data["winners_count"],
+            self.data["end_time"],
+            self.data["requirements"]
+        )
+        await self.cog.restart_giveaway_task(self.data["guild_id"], self.data["giveaway_id"])
         await self.cog.update_giveaway_message(self.data["guild_id"])
         await interaction.response.send_message(f"✅ Çekiliş süresi güncellendi. Yeni Bitiş: <t:{int(new_end.timestamp())}:R>", ephemeral=True)
 
@@ -195,19 +229,19 @@ class GiveawayView(discord.ui.View):
 
     @discord.ui.button(label="Çekilişe Katıl", style=discord.ButtonStyle.success, emoji="🎉", custom_id="btn_live_giveaway_join")
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        data = database.get_active_giveaway(self.guild_id)
+        data = await asyncio.to_thread(database.get_active_giveaway, self.guild_id)
         if not data:
             return await interaction.response.send_message("❌ Bu çekiliş artık aktif değil.", ephemeral=True)
 
         user_id = interaction.user.id
-        participants = database.get_giveaway_participants(data["giveaway_id"])
+        participants = await asyncio.to_thread(database.get_giveaway_participants, data["giveaway_id"])
 
         if user_id in participants:
-            database.remove_giveaway_participant(data["giveaway_id"], user_id)
+            await asyncio.to_thread(database.remove_giveaway_participant, data["giveaway_id"], user_id)
             resp_text = "❌ Çekilişten ayrıldınız."
             participants.remove(user_id)
         else:
-            database.add_giveaway_participant(data["giveaway_id"], user_id)
+            await asyncio.to_thread(database.add_giveaway_participant, data["giveaway_id"], user_id)
             resp_text = "✅ Çekilişe başarıyla katıldınız! Şansınız bol olsun."
             participants.append(user_id)
 
@@ -251,7 +285,7 @@ class GiveawayCog(commands.Cog):
     async def restore_giveaways(self):
         await self.bot.wait_until_ready()
         for guild in self.bot.guilds:
-            data = database.get_active_giveaway(guild.id)
+            data = await asyncio.to_thread(database.get_active_giveaway, guild.id)
             if data and guild.id not in self.running_tasks:
                 task = asyncio.create_task(self.run_giveaway_loop(guild.id, data["giveaway_id"]))
                 self.running_tasks[guild.id] = task
@@ -262,8 +296,15 @@ class GiveawayCog(commands.Cog):
         staff_id = getattr(config, "STAFF_ROLE_ID", None) or getattr(config, "AUTHORIZED_ROLE_ID", None)
         return any(role.id == staff_id for role in interaction.user.roles)
 
+    async def restart_giveaway_task(self, guild_id: int, giveaway_id: int):
+        current_task = self.running_tasks.get(guild_id)
+        if current_task and not current_task.done():
+            current_task.cancel()
+        task = asyncio.create_task(self.run_giveaway_loop(guild_id, giveaway_id))
+        self.running_tasks[guild_id] = task
+
     async def update_giveaway_message(self, guild_id: int):
-        data = database.get_active_giveaway(guild_id)
+        data = await asyncio.to_thread(database.get_active_giveaway, guild_id)
         if not data or not data.get("message_id"):
             return
 
@@ -273,7 +314,7 @@ class GiveawayCog(commands.Cog):
 
         try:
             msg = await channel.fetch_message(data["message_id"])
-            participants = database.get_giveaway_participants(data["giveaway_id"])
+            participants = await asyncio.to_thread(database.get_giveaway_participants, data["giveaway_id"])
             end_dt = ensure_utc(data["end_time"])
             end_ts = int(end_dt.timestamp())
             host_user = channel.guild.get_member(data["host_id"])
@@ -299,81 +340,83 @@ class GiveawayCog(commands.Cog):
             pass
 
     async def run_giveaway_loop(self, guild_id: int, giveaway_id: int):
-        while True:
-            data = database.get_active_giveaway(guild_id)
+        try:
+            data = await asyncio.to_thread(database.get_active_giveaway, guild_id)
             if not data or data["status"] != "active":
                 self.running_tasks.pop(guild_id, None)
                 return
 
-            now = datetime.datetime.now(datetime.timezone.utc)
             end_dt = ensure_utc(data["end_time"])
+            now = datetime.datetime.now(datetime.timezone.utc)
+            remaining_seconds = max(0.0, (end_dt - now).total_seconds())
 
-            if now >= end_dt:
-                break
-            await asyncio.sleep(2)
+            if remaining_seconds > 0:
+                await asyncio.sleep(remaining_seconds)
 
-        database.end_db_giveaway(giveaway_id, status="ended")
-        self.running_tasks.pop(guild_id, None)
+            await asyncio.to_thread(database.end_db_giveaway, giveaway_id, "ended")
+            self.running_tasks.pop(guild_id, None)
 
-        channel = self.bot.get_channel(data["channel_id"])
-        if not channel:
-            return
+            channel = self.bot.get_channel(data["channel_id"])
+            if not channel:
+                return
 
-        try:
-            message = await channel.fetch_message(data["message_id"])
-        except Exception:
-            return
+            try:
+                message = await channel.fetch_message(data["message_id"])
+            except Exception:
+                return
 
-        participants = database.get_giveaway_participants(giveaway_id)
-        view = GiveawayView(guild_id=guild_id)
-        for item in view.children:
-            item.disabled = True
-            if isinstance(item, discord.ui.Button):
-                item.label = f"Çekiliş Sona Erdi ({len(participants)})"
-                item.style = discord.ButtonStyle.secondary
+            participants = await asyncio.to_thread(database.get_giveaway_participants, giveaway_id)
+            view = GiveawayView(guild_id=guild_id)
+            for item in view.children:
+                item.disabled = True
+                if isinstance(item, discord.ui.Button):
+                    item.label = f"Çekiliş Sona Erdi ({len(participants)})"
+                    item.style = discord.ButtonStyle.secondary
 
-        if not participants:
+            if not participants:
+                end_embed = discord.Embed(
+                    title="🔒 ÇEKİLİŞ SONUÇLANDI",
+                    description=f"🎁 **Ödül:** `{data['prize']}`\n\n❌ Yetersiz katılım sebebiyle kazanan belirlenemedi.",
+                    color=discord.Color.red(),
+                    timestamp=datetime.datetime.now(datetime.timezone.utc)
+                )
+                await message.edit(embed=end_embed, view=view)
+                return await channel.send(f"⚠️ **{data['prize']}** çekilişine kimse katılmadığı için kazanan seçilemedi.")
+
+            winners_count = min(len(participants), data["winners_count"])
+            selected_ids = random.sample(participants, winners_count)
+            won_users = set(selected_ids)
+            winners_mentions = ", ".join([f"<@{uid}>" for uid in selected_ids])
+
             end_embed = discord.Embed(
                 title="🔒 ÇEKİLİŞ SONUÇLANDI",
-                description=f"🎁 **Ödül:** `{data['prize']}`\n\n❌ Yetersiz katılım sebebiyle kazanan belirlenemedi.",
-                color=discord.Color.red(),
+                description=f"🎁 **Ödül:** `{data['prize']}`\n\n🏆 **Kazanan(lar):** {winners_mentions}\n👥 **Toplam Katılımcı:** `{len(participants)} Kişi`",
+                color=discord.Color.green(),
                 timestamp=datetime.datetime.now(datetime.timezone.utc)
             )
             await message.edit(embed=end_embed, view=view)
-            return await channel.send(f"⚠️ **{data['prize']}** çekilişine kimse katılmadığı için kazanan seçilemedi.")
 
-        winners_count = min(len(participants), data["winners_count"])
-        selected_ids = random.sample(participants, winners_count)
-        won_users = set(selected_ids)
-        winners_mentions = ", ".join([f"<@{uid}>" for uid in selected_ids])
+            celebrate_embed = discord.Embed(
+                title="🎊 ÇEKİLİŞ KAZANANLARI BELİRLENDİ!",
+                description=(
+                    f"🎁 **Ödül:** `{data['prize']}`\n\n"
+                    f"🏆 **Tebrikler:** {winners_mentions}\n\n"
+                    f"📌 *Ödülünüzü teslim almak için lütfen <@{data['host_id']}> ile iletişime geçin.*"
+                ),
+                color=discord.Color.gold(),
+                timestamp=datetime.datetime.now(datetime.timezone.utc)
+            )
+            celebrate_embed.set_footer(text="Demokratik Sol Parti Çekiliş Sistemi")
 
-        end_embed = discord.Embed(
-            title="🔒 ÇEKİLİŞ SONUÇLANDI",
-            description=f"🎁 **Ödül:** `{data['prize']}`\n\n🏆 **Kazanan(lar):** {winners_mentions}\n👥 **Toplam Katılımcı:** `{len(participants)} Kişi`",
-            color=discord.Color.green(),
-            timestamp=datetime.datetime.now(datetime.timezone.utc)
-        )
-        await message.edit(embed=end_embed, view=view)
-
-        celebrate_embed = discord.Embed(
-            title="🎊 ÇEKİLİŞ KAZANANLARI BELİRLENDİ!",
-            description=(
-                f"🎁 **Ödül:** `{data['prize']}`\n\n"
-                f"🏆 **Tebrikler:** {winners_mentions}\n\n"
-                f"📌 *Ödülünüzü teslim almak için lütfen <@{data['host_id']}> ile iletişime geçin.*"
-            ),
-            color=discord.Color.gold(),
-            timestamp=datetime.datetime.now(datetime.timezone.utc)
-        )
-        celebrate_embed.set_footer(text="Demokratik Sol Parti Çekiliş Sistemi")
-
-        reroll_view = RerollView(
-            prize=data["prize"], 
-            host_id=data["host_id"], 
-            participants=participants, 
-            won_users=won_users
-        )
-        await channel.send(content=f"🎉 {winners_mentions}", embed=celebrate_embed, view=reroll_view)
+            reroll_view = RerollView(
+                prize=data["prize"], 
+                host_id=data["host_id"], 
+                participants=participants, 
+                won_users=won_users
+            )
+            await channel.send(content=f"🎉 {winners_mentions}", embed=celebrate_embed, view=reroll_view)
+        except asyncio.CancelledError:
+            pass
 
     @app_commands.command(name="çekiliş", description="Kalıcı ve modern bir çekiliş başlatır.")
     @app_commands.describe(
@@ -394,7 +437,8 @@ class GiveawayCog(commands.Cog):
             return await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz bulunmuyor.", ephemeral=True)
 
         guild_id = interaction.guild.id
-        if database.get_active_giveaway(guild_id):
+        active_gw = await asyncio.to_thread(database.get_active_giveaway, guild_id)
+        if active_gw:
             return await interaction.response.send_message("❌ **Zaten aktif bir çekiliş bulunmakta!** Sunucuda aynı anda yalnızca 1 adet çekiliş yürütülebilir.", ephemeral=True)
 
         if kazanan_sayısı < 1 or süre_dakika < 1:
@@ -403,7 +447,8 @@ class GiveawayCog(commands.Cog):
         end_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=süre_dakika)
         req_text = şartlar if şartlar else "Şart Yok (Herkese Açık)"
 
-        giveaway_id = database.create_db_giveaway(
+        giveaway_id = await asyncio.to_thread(
+            database.create_db_giveaway,
             guild_id=guild_id,
             channel_id=interaction.channel_id,
             prize=ödül,
@@ -431,7 +476,7 @@ class GiveawayCog(commands.Cog):
         await interaction.response.send_message(embed=embed, view=view)
         message = await interaction.original_response()
 
-        database.set_giveaway_message_id(giveaway_id, message.id)
+        await asyncio.to_thread(database.set_giveaway_message_id, giveaway_id, message.id)
         self.running_tasks[guild_id] = asyncio.create_task(self.run_giveaway_loop(guild_id, giveaway_id))
 
     @app_commands.command(name="çekilişiptal", description="Aktif olan çekilişi iptal eder.")
@@ -441,12 +486,17 @@ class GiveawayCog(commands.Cog):
             return await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz bulunmuyor.", ephemeral=True)
 
         guild_id = interaction.guild.id
-        data = database.get_active_giveaway(guild_id)
+        data = await asyncio.to_thread(database.get_active_giveaway, guild_id)
 
         if not data:
             return await interaction.response.send_message("❌ Şu anda sunucuda devam eden aktif bir çekiliş bulunmuyor.", ephemeral=True)
 
-        database.end_db_giveaway(data["giveaway_id"], status="cancelled")
+        task = self.running_tasks.get(guild_id)
+        if task and not task.done():
+            task.cancel()
+        self.running_tasks.pop(guild_id, None)
+
+        await asyncio.to_thread(database.end_db_giveaway, data["giveaway_id"], "cancelled")
 
         channel = self.bot.get_channel(data["channel_id"])
         if channel and data["message_id"]:
@@ -478,12 +528,12 @@ class GiveawayCog(commands.Cog):
             return await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz bulunmuyor.", ephemeral=True)
 
         guild_id = interaction.guild.id
-        data = database.get_active_giveaway(guild_id)
+        data = await asyncio.to_thread(database.get_active_giveaway, guild_id)
 
         if not data:
             return await interaction.response.send_message("❌ Yönetilebilecek aktif bir çekiliş bulunamadı.", ephemeral=True)
 
-        participants = database.get_giveaway_participants(data["giveaway_id"])
+        participants = await asyncio.to_thread(database.get_giveaway_participants, data["giveaway_id"])
         end_dt = ensure_utc(data["end_time"])
         end_ts = int(end_dt.timestamp())
 
