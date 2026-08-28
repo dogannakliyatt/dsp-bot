@@ -241,7 +241,6 @@ class PollCommands(commands.Cog):
         if not self.is_authorized(interaction):
             return await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz yok.", ephemeral=True)
 
-        # 3 saniye timeout hatasını engellemek için hemen defer ediyoruz
         await interaction.response.defer(ephemeral=True)
 
         perms = kanal.permissions_for(interaction.guild.me)
@@ -264,7 +263,6 @@ class PollCommands(commands.Cog):
             embed.add_field(name="🔒 Kısıtlama", value=f"Yalnızca {oy_kullanabilecek_rol.mention} rolüne sahip üyeler oy kullanabilir.", inline=False)
         embed.set_footer(text="Her kullanıcının 1 oy hakkı vardır ve kullanılan oylar değiştirilemez.")
 
-        # Henüz aday olmadığı için boş view atıyoruz
         msg = await kanal.send(embed=embed)
         database.set_poll_message_id(poll_id, msg.id)
 
