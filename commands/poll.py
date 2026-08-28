@@ -178,7 +178,7 @@ class AdayKaldirOnayView(discord.ui.View):
 
                 embed.set_footer(text="Her kullanıcının 1 oy hakkı vardır ve kullanılan oylar değiştirilemez.")
 
-                view = OylamaView(self.poll_id, self.poll_title)
+                view = OylamaView(self.poll_id, self.poll_title) if candidates else discord.ui.View()
                 await msg.edit(embed=embed, view=view)
             except Exception as e:
                 print(f"Aday kaldırma sonrası mesaj güncelleme hatası: {e}")
@@ -241,8 +241,19 @@ class PollCommands(commands.Cog):
         if not self.is_authorized(interaction):
             return await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz yok.", ephemeral=True)
 
+        # 3 saniye timeout hatasını engellemek için hemen defer ediyoruz
+        await interaction.response.defer(ephemeral=True)
+
+        perms = kanal.permissions_for(interaction.guild.me)
+        if not perms.send_messages or not perms.embed_links:
+            return await interaction.followup.send(f"❌ Botun {kanal.mention} kanalına mesaj gönderme veya Embed bağlantısı yetkisi yok!", ephemeral=True)
+
         target_role_id = oy_kullanabilecek_rol.id if oy_kullanabilecek_rol else None
-        poll_id = database.add_poll(baslik, kanal.id, target_role_id)
+        
+        try:
+            poll_id = database.add_poll(baslik, kanal.id, target_role_id)
+        except Exception as e:
+            return await interaction.followup.send(f"❌ Veritabanı kayıt hatası: {str(e)}", ephemeral=True)
 
         embed = discord.Embed(
             title=f"🗳️ {baslik}",
@@ -253,11 +264,11 @@ class PollCommands(commands.Cog):
             embed.add_field(name="🔒 Kısıtlama", value=f"Yalnızca {oy_kullanabilecek_rol.mention} rolüne sahip üyeler oy kullanabilir.", inline=False)
         embed.set_footer(text="Her kullanıcının 1 oy hakkı vardır ve kullanılan oylar değiştirilemez.")
 
-        view = OylamaView(poll_id, baslik)
-        msg = await kanal.send(embed=embed, view=view)
+        # Henüz aday olmadığı için boş view atıyoruz
+        msg = await kanal.send(embed=embed)
         database.set_poll_message_id(poll_id, msg.id)
 
-        await interaction.response.send_message(f"✅ Oylama başarıyla {kanal.mention} kanalında başlatıldı! Aday eklemek için `/adayekle` komutunu kullanabilirsiniz.", ephemeral=True)
+        await interaction.followup.send(f"✅ Oylama başarıyla {kanal.mention} kanalında başlatıldı! Aday eklemek için `/adayekle` komutunu kullanabilirsiniz.", ephemeral=True)
 
     @app_commands.command(name="adayekle", description="Aktif bir oylamaya aday ekler.")
     @app_commands.describe(oylama="Aday eklenecek oylama", aday_ismi="Eklenecek adayın adı")
@@ -266,14 +277,16 @@ class PollCommands(commands.Cog):
         if not self.is_authorized(interaction):
             return await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz yok.", ephemeral=True)
 
+        await interaction.response.defer(ephemeral=True)
+
         try:
             poll_id = int(oylama)
         except ValueError:
-            return await interaction.response.send_message("❌ Geçersiz oylama seçimi.", ephemeral=True)
+            return await interaction.followup.send("❌ Geçersiz oylama seçimi.", ephemeral=True)
 
         poll = database.get_poll_by_id(poll_id)
         if not poll:
-            return await interaction.response.send_message("❌ Oylama bulunamadı.", ephemeral=True)
+            return await interaction.followup.send("❌ Oylama bulunamadı.", ephemeral=True)
 
         p_title = poll["title"]
         p_chid = poll["channel_id"]
@@ -303,7 +316,7 @@ class PollCommands(commands.Cog):
             except Exception as e:
                 print(f"Mesaj güncelleme hatası: {e}")
 
-        await interaction.response.send_message(f"✅ **{aday_ismi}** adayı **{p_title}** oylamasına başarıyla eklendi!", ephemeral=True)
+        await interaction.followup.send(f"✅ **{aday_ismi}** adayı **{p_title}** oylamasına başarıyla eklendi!", ephemeral=True)
 
     @app_commands.command(name="adaykaldır", description="Aktif bir oylamadan adayı kaldırır.")
     @app_commands.describe(oylama="Aday çıkarılacak oylama", aday="Kaldırılacak aday")
@@ -346,14 +359,16 @@ class PollCommands(commands.Cog):
         if not self.is_authorized(interaction):
             return await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz yok.", ephemeral=True)
 
+        await interaction.response.defer(ephemeral=True)
+
         try:
             poll_id = int(oylama)
         except ValueError:
-            return await interaction.response.send_message("❌ Geçersiz oylama seçimi.", ephemeral=True)
+            return await interaction.followup.send("❌ Geçersiz oylama seçimi.", ephemeral=True)
 
         poll = database.get_poll_by_id(poll_id)
         if not poll:
-            return await interaction.response.send_message("❌ Oylama bulunamadı.", ephemeral=True)
+            return await interaction.followup.send("❌ Oylama bulunamadı.", ephemeral=True)
 
         p_title = poll["title"]
         p_chid = poll["channel_id"]
@@ -412,7 +427,7 @@ class PollCommands(commands.Cog):
             except Exception:
                 pass
 
-        await interaction.response.send_message(f"✅ **{p_title}** oylaması başarıyla sonlandırıldı. Sonuçlar log kanalına gönderildi ve ilgili rol için kanal erişimi kapatıldı.", ephemeral=True)
+        await interaction.followup.send(f"✅ **{p_title}** oylaması başarıyla sonlandırıldı. Sonuçlar log kanalına gönderildi ve ilgili rol için kanal erişimi kapatıldı.", ephemeral=True)
 
     @app_commands.command(name="oylamaiptal", description="Oylamayı sonuçlandırmadan siler.")
     @app_commands.describe(oylama="İptal edilecek oylama")
