@@ -7,7 +7,14 @@ import random
 import config
 import database
 
-# --- MODAL PENCERELERİ ---
+def ensure_utc(dt):
+    if dt is None:
+        return datetime.datetime.now(datetime.timezone.utc)
+    if isinstance(dt, datetime.datetime):
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=datetime.timezone.utc)
+        return dt
+    return datetime.datetime.now(datetime.timezone.utc)
 
 class EditPrizeModal(discord.ui.Modal, title="🎁 Ödülü Düzenle"):
     new_prize = discord.ui.TextInput(
@@ -97,7 +104,8 @@ class EditTimeModal(discord.ui.Modal, title="⏳ Süre Ekle veya Azalt"):
         except ValueError:
             return await interaction.response.send_message("❌ Geçerli bir sayı giriniz (Örn: 10 veya -5).", ephemeral=True)
 
-        new_end = self.data["end_time"] + datetime.timedelta(minutes=minutes)
+        current_end = ensure_utc(self.data["end_time"])
+        new_end = current_end + datetime.timedelta(minutes=minutes)
         now = datetime.datetime.now(datetime.timezone.utc)
 
         if new_end <= now:
@@ -108,8 +116,6 @@ class EditTimeModal(discord.ui.Modal, title="⏳ Süre Ekle veya Azalt"):
         await self.cog.update_giveaway_message(self.data["guild_id"])
         await interaction.response.send_message(f"✅ Çekiliş süresi güncellendi. Yeni Bitiş: <t:{int(new_end.timestamp())}:R>", ephemeral=True)
 
-
-# --- ÇEKİLİŞ YÖNETİM PANELİ VIEW ---
 
 class GiveawayManageView(discord.ui.View):
     def __init__(self, cog, giveaway_data):
@@ -133,8 +139,6 @@ class GiveawayManageView(discord.ui.View):
     async def edit_reqs(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(EditRequirementsModal(self.cog, self.data))
 
-
-# --- TEKRAR ÇEK BUTONU VIEW ---
 
 class RerollView(discord.ui.View):
     def __init__(self, prize: str, host_id: int, participants: list, won_users: set):
@@ -184,8 +188,6 @@ class RerollView(discord.ui.View):
         await interaction.response.send_message(f"✅ Yeni kazanan belirlendi: {winner_mention}", ephemeral=True)
 
 
-# --- ANA ÇEKİLİŞ KATILIM VIEW ---
-
 class GiveawayView(discord.ui.View):
     def __init__(self, guild_id: int):
         super().__init__(timeout=None)
@@ -211,19 +213,20 @@ class GiveawayView(discord.ui.View):
 
         button.label = f"Çekilişe Katıl ({len(participants)})"
         
-        end_ts = int(data["end_time"].timestamp())
+        end_dt = ensure_utc(data["end_time"])
+        end_ts = int(end_dt.timestamp())
         embed = discord.Embed(
             title="🎁 ÇEKİLİŞ ETKİNLİĞİ",
             description="Çekilişe katılmak veya katılımınızı geri çekmek için aşağıdaki **Katıl** butonuna tıklayabilirsiniz.\n",
             color=config.COLOR_HEX,
-            timestamp=data["end_time"]
+            timestamp=end_dt
         )
         embed.add_field(name="🎉 Ödül", value=f"```fix\n{data['prize']}\n```", inline=False)
         embed.add_field(name="📋 Katılım Şartları", value=f"> {data['requirements']}", inline=False)
         embed.add_field(name="🏆 Kazanan Sayısı", value=f"`{data['winners_count']} Kişi`", inline=True)
         embed.add_field(name="👥 Katılımcılar", value=f"`{len(participants)} Kişi`", inline=True)
         embed.add_field(name="⏳ Bitiş", value=f"<t:{end_ts}:R>", inline=True)
-        embed.set_footer(text=f"Bitiş Zamanı")
+        embed.set_footer(text="Bitiş Zamanı")
 
         try:
             await interaction.response.edit_message(embed=embed, view=self)
@@ -231,8 +234,6 @@ class GiveawayView(discord.ui.View):
         except Exception:
             pass
 
-
-# --- COG SINIFI ---
 
 class GiveawayCog(commands.Cog):
     def __init__(self, bot):
@@ -268,13 +269,14 @@ class GiveawayCog(commands.Cog):
         try:
             msg = await channel.fetch_message(data["message_id"])
             participants = database.get_giveaway_participants(data["giveaway_id"])
-            end_ts = int(data["end_time"].timestamp())
+            end_dt = ensure_utc(data["end_time"])
+            end_ts = int(end_dt.timestamp())
 
             embed = discord.Embed(
                 title="🎁 ÇEKİLİŞ ETKİNLİĞİ",
                 description="Çekilişe katılmak veya katılımınızı geri çekmek için aşağıdaki **Katıl** butonuna tıklayabilirsiniz.\n",
                 color=config.COLOR_HEX,
-                timestamp=data["end_time"]
+                timestamp=end_dt
             )
             embed.add_field(name="🎉 Ödül", value=f"```fix\n{data['prize']}\n```", inline=False)
             embed.add_field(name="📋 Katılım Şartları", value=f"> {data['requirements']}", inline=False)
@@ -296,9 +298,7 @@ class GiveawayCog(commands.Cog):
                 return
 
             now = datetime.datetime.now(datetime.timezone.utc)
-            end_dt = data["end_time"]
-            if end_dt.tzinfo is None:
-                end_dt = end_dt.replace(tzinfo=datetime.timezone.utc)
+            end_dt = ensure_utc(data["end_time"])
 
             if now >= end_dt:
                 break
@@ -476,7 +476,8 @@ class GiveawayCog(commands.Cog):
             return await interaction.response.send_message("❌ Yönetilebilecek aktif bir çekiliş bulunamadı.", ephemeral=True)
 
         participants = database.get_giveaway_participants(data["giveaway_id"])
-        end_ts = int(data["end_time"].timestamp())
+        end_dt = ensure_utc(data["end_time"])
+        end_ts = int(end_dt.timestamp())
 
         embed = discord.Embed(
             title="⚙️ Çekiliş Yönetim Paneli",
