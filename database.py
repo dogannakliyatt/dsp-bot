@@ -77,6 +77,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS poll_votes (
                 poll_id INTEGER NOT NULL,
                 user_id BIGINT NOT NULL,
+                candidate_id INTEGER,
                 PRIMARY KEY (poll_id, user_id)
             );
         ''')
@@ -168,7 +169,10 @@ def add_candidate(poll_id, name):
 
 def remove_candidate(poll_id, candidate_id):
     with get_db_cursor(commit=True) as cursor:
+        # Adayı sil
         cursor.execute("DELETE FROM poll_candidates WHERE poll_id = %s AND candidate_id = %s", (poll_id, candidate_id))
+        # Silinen adaya verilen oyları da temizle ki kullanıcılar tekrar oy kullanabilsin ve oy toplamı bozulmasın
+        cursor.execute("DELETE FROM poll_votes WHERE poll_id = %s AND candidate_id = %s", (poll_id, candidate_id))
 
 def get_candidates(poll_id):
     with get_db_cursor(commit=False) as cursor:
@@ -183,7 +187,7 @@ def has_voted(poll_id, user_id):
 def cast_vote(poll_id, user_id, candidate_id):
     try:
         with get_db_cursor(commit=True) as cursor:
-            cursor.execute("INSERT INTO poll_votes (poll_id, user_id) VALUES (%s, %s)", (poll_id, user_id))
+            cursor.execute("INSERT INTO poll_votes (poll_id, user_id, candidate_id) VALUES (%s, %s, %s)", (poll_id, user_id, candidate_id))
             cursor.execute("UPDATE poll_candidates SET votes = votes + 1 WHERE candidate_id = %s", (candidate_id,))
             return True
     except Exception:
