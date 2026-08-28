@@ -2,6 +2,21 @@ import discord
 import config
 import database
 import datetime
+import asyncio
+
+def ensure_utc(dt):
+    if dt is None:
+        return datetime.datetime.now(datetime.timezone.utc)
+    if isinstance(dt, str):
+        try:
+            dt = datetime.datetime.fromisoformat(dt)
+        except Exception:
+            return datetime.datetime.now(datetime.timezone.utc)
+    if isinstance(dt, datetime.datetime):
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=datetime.timezone.utc)
+        return dt
+    return datetime.datetime.now(datetime.timezone.utc)
 
 # --- OYLAMA / SEÇİM KALICI GÖRÜNÜMLERİ ---
 
@@ -15,10 +30,11 @@ class OyOnayView(discord.ui.View):
 
     @discord.ui.button(label="Evet, Oy Ver", style=discord.ButtonStyle.green, custom_id="btn_evet_oy")
     async def evet_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if database.has_voted(self.poll_id, interaction.user.id):
+        has_voted_result = await asyncio.to_thread(database.has_voted, self.poll_id, interaction.user.id)
+        if has_voted_result:
             return await interaction.response.edit_message(content="❌ Zaten bu oylamada oy kullandınız! Oyunuz değiştirilemez.", view=None)
 
-        success = database.cast_vote(self.poll_id, interaction.user.id, self.candidate_id)
+        success = await asyncio.to_thread(database.cast_vote, self.poll_id, interaction.user.id, self.candidate_id)
         if success:
             await interaction.response.edit_message(content=f"✅ Oy verme işleminiz başarıyla kaydedildi! Tercihiniz: **{self.candidate_name}**", view=None)
             
@@ -65,7 +81,7 @@ class AdaySelect(discord.ui.Select):
         self.poll_title = poll_title
 
     async def callback(self, interaction: discord.Interaction):
-        poll = database.get_poll_by_id(self.poll_id)
+        poll = await asyncio.to_thread(database.get_poll_by_id, self.poll_id)
         if not poll:
             return await interaction.response.send_message("❌ Oylama bulunamadı.", ephemeral=True)
 
@@ -75,11 +91,12 @@ class AdaySelect(discord.ui.Select):
             if not user_has_role and not interaction.user.guild_permissions.administrator and interaction.user.id != interaction.guild.owner_id:
                 return await interaction.response.send_message(f"❌ Bu oylamada yalnızca <@&{target_role_id}> rolüne sahip üyeler oy kullanabilir.", ephemeral=True)
 
-        if database.has_voted(self.poll_id, interaction.user.id):
+        has_voted_result = await asyncio.to_thread(database.has_voted, self.poll_id, interaction.user.id)
+        if has_voted_result:
             return await interaction.response.send_message("❌ Daha önce bu oylamada oy kullandınız. Tekrar oy kullanamazsınız!", ephemeral=True)
 
         selected_candidate_id = int(self.values[0])
-        candidates = database.get_candidates(self.poll_id)
+        candidates = await asyncio.to_thread(database.get_candidates, self.poll_id)
         
         candidate_name = "Bilinmeyen Aday"
         for c in candidates:
@@ -115,29 +132,25 @@ class GiveawayView(discord.ui.View):
     @discord.ui.button(label="Çekilişe Katıl", style=discord.ButtonStyle.success, emoji="🎉", custom_id="btn_live_giveaway_join")
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         target_guild_id = self.guild_id or interaction.guild.id
-        data = database.get_active_giveaway(target_guild_id)
+        data = await asyncio.to_thread(database.get_active_giveaway, target_guild_id)
         if not data:
             return await interaction.response.send_message("❌ Bu çekiliş artık aktif değil.", ephemeral=True)
 
         user_id = interaction.user.id
-        participants = database.get_giveaway_participants(data["giveaway_id"])
+        participants = await asyncio.to_thread(database.get_giveaway_participants, data["giveaway_id"])
 
         if user_id in participants:
-            database.remove_giveaway_participant(data["giveaway_id"], user_id)
+            await asyncio.to_thread(database.remove_giveaway_participant, data["giveaway_id"], user_id)
             resp_text = "❌ Çekilişten ayrıldınız."
             participants.remove(user_id)
         else:
-            database.add_giveaway_participant(data["giveaway_id"], user_id)
+            await asyncio.to_thread(database.add_giveaway_participant, data["giveaway_id"], user_id)
             resp_text = "✅ Çekilişe başarıyla katıldınız! Şansınız bol olsun."
             participants.append(user_id)
 
         button.label = f"Çekilişe Katıl ({len(participants)})"
         
-        end_dt = data["end_time"]
-        if isinstance(end_dt, str):
-            end_dt = datetime.datetime.fromisoformat(end_dt)
-        if end_dt.tzinfo is None:
-            end_dt = end_dt.replace(tzinfo=datetime.timezone.utc)
+        end_dt = ensure_utc(data["end_time"])
         end_ts = int(end_dt.timestamp())
         host_user = interaction.guild.get_member(data["host_id"])
         
@@ -154,6 +167,8 @@ class GiveawayView(discord.ui.View):
         embed.add_field(name="⏳ Bitiş", value=f"<t:{end_ts}:R>", inline=True)
         if host_user:
             embed.set_footer(text=f"Düzenleyen: {host_user.display_name} • Bitiş Zamanı", icon_url=host_user.display_avatar.url)
+        else:
+            embed.set_footer(text="Bitiş Zamanı")
 
         try:
             await interaction.response.edit_message(embed=embed, view=self)
@@ -165,13 +180,10 @@ class GiveawayView(discord.ui.View):
 # --- OTOMATİK YÜKLEYİCİ FONKSİYON ---
 
 async def register_all_persistent_views(bot: discord.Client):
-    """Bot açıldığında veritabanındaki tüm aktif buton ve menüleri tek seferde korumaya alır."""
-    # 1. Çekiliş Butonunu Koru
     bot.add_view(GiveawayView())
 
-    # 2. Aktif Oylama Menülerini Koru
     try:
-        active_polls = database.get_active_polls()
+        active_polls = await asyncio.to_thread(database.get_active_polls)
         for p in active_polls:
             bot.add_view(OylamaView(p["poll_id"], p["title"]))
         print(f"🛡️ [KORUMA] {len(active_polls)} adet oylama ve çekiliş butonu kalıcı hafızaya alındı.")
