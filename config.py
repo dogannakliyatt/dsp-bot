@@ -74,3 +74,35 @@ RP_ROLES = {
     "MV": [1537150966535553035, 1537153295150350466],
     "Yok": []
 }
+
+# Protokol ve Şema Rol Tanımları
+PARTY_STRUCTURE_ROLES = {
+    "Genel Başkan": 1537148955840741376,
+    "Genel Başkanvekili": 1537149075194118248,
+    "Parti Genel Sekreteri": 1537149226990182450,
+    "MYK Başkanı": 1537149324473929778,
+    "Genel Başkan Yardımcıları": 1537149477796970686,
+    "Parti Sözcüsü": 1537149604343316572,
+    "Gençlik Kolları Başkanı": 1537149684345475123,
+    "Merkez Yürütme Kurulu Üyesi (MYKÜ)": 1537149762913046568
+}
+
+CABINET_ROLES = {
+    "Cumhurbaşkanı": 1537149921541492836,
+    "Cumhurbaşkanı Yardımcısı": 1537595817429569706,
+    "Başbakan": 1537149991146229810,
+    "Kabine Üyeleri (Bakanlar)": 1537150254833467502,
+    "İstanbul Büyükşehir Belediye Başkanı": 1537151635170525334,
+    "Ankara Büyükşehir Belediye Başkanı": 1537151839881924691,
+    "İzmir Büyükşehir Belediye Başkanı": 1537151887231426620,
+    "Bursa Büyükşehir Belediye Başkanı": 1537151950884175872,
+}
+
+PARLIAMENT_ROLES = {
+    "TBMM Başkanı": 1537150038512242740,
+    "TBMM Başkanvekili": 1537150202857787402,
+    "TBMM Kâtibi": 1537154296737701960,
+    "Meclis Grup Başkanı": 1537150788533485578,
+    "Meclis Grup Başkanvekili": 1537150854786719875,
+    "Milletvekilleri": 1537150966535553035
+}
