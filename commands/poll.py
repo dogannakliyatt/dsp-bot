@@ -79,13 +79,7 @@ class AdaySelect(discord.ui.Select):
                 candidate_name = c["name"]
                 break
 
-        # Mesajı doğrudan interaction.message ile güncelle ve etkileşimi temizce ephemeral aç
-        reset_view = OylamaView(self.poll_id, self.poll_title)
-        try:
-            await interaction.message.edit(view=reset_view)
-        except Exception:
-            pass
-
+        # Onay modal/panelini direkt aç
         view = OyOnayView(self.poll_id, selected_candidate_id, candidate_name, self.poll_title)
         await interaction.response.send_message(
             content=f"**{candidate_name}** isimli adaya oy vermek istediğinize emin misiniz?",
