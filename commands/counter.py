@@ -14,17 +14,24 @@ class CounterCommands(commands.Cog):
         return any(role.id == config.AUTHORIZED_ROLE_ID for role in interaction.user.roles)
 
     @app_commands.command(name="kayıttop", description="En çok kayıt yapan yetkilileri listeler.")
-    async def kayittop(self, interaction: discord.Interaction):
+    @app_commands.describe(filtre="Sıralama aralığı")
+    @app_commands.choices(filtre=[
+        app_commands.Choice(name="Tüm Zamanlar", value="all"),
+        app_commands.Choice(name="Son 7 Gün (Haftalık)", value="weekly")
+    ])
+    async def kayittop(self, interaction: discord.Interaction, filtre: app_commands.Choice[str] = None):
         if not self.is_authorized(interaction):
             return await interaction.response.send_message("❌ Bu komutu kullanmak için gerekli yetkiye sahip değilsiniz.", ephemeral=True)
 
+        is_weekly = filtre and filtre.value == "weekly"
+
         try:
-            rows = database.get_top_staff()
+            rows = database.get_weekly_staff_stats() if is_weekly else database.get_top_staff()
         except Exception as e:
             return await interaction.response.send_message(f"❌ Veritabanı hatası: {str(e)}", ephemeral=True)
 
         if not rows:
-            return await interaction.response.send_message("📊 Henüz herhangi bir kayıt verisi bulunmuyor.", ephemeral=True)
+            return await interaction.response.send_message("📊 Henüz belirtilen aralıkta herhangi bir kayıt verisi bulunmuyor.", ephemeral=True)
 
         msg = ""
         for idx, row in enumerate(rows[:10], start=1):
@@ -36,7 +43,7 @@ class CounterCommands(commands.Cog):
             msg += f"**{idx}.** {user_str} — **{count}** kayıt\n"
 
         embed = discord.Embed(
-            title="🏆 Kayıt Yetkilisi Sıralaması",
+            title="🏆 Kayıt Yetkilisi Sıralaması " + ("(Son 7 Gün)" if is_weekly else "(Tüm Zamanlar)"),
             description=msg,
             color=config.COLOR_HEX
         )
