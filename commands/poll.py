@@ -4,8 +4,9 @@ from discord.ext import commands
 import config
 import database
 import datetime
+import asyncio
 
-TARGET_ROLE_ID = 1537153933305315328
+TARGET_ROLE_ID = getattr(config, "BASE_MEMBER_ROLE_ID", 1537153933305315328)
 
 def create_progress_bar(pct: float, length: int = 10) -> str:
     filled = int(round(length * (pct / 100)))
@@ -22,10 +23,11 @@ class OyOnayView(discord.ui.View):
 
     @discord.ui.button(label="Evet, Oy Ver", style=discord.ButtonStyle.green, custom_id="btn_evet_oy")
     async def evet_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if database.has_voted(self.poll_id, interaction.user.id):
+        has_voted_result = await asyncio.to_thread(database.has_voted, self.poll_id, interaction.user.id)
+        if has_voted_result:
             return await interaction.response.edit_message(content="❌ Zaten bu oylamada oy kullandınız! Oyunuz değiştirilemez.", view=None)
 
-        success = database.cast_vote(self.poll_id, interaction.user.id, self.candidate_id)
+        success = await asyncio.to_thread(database.cast_vote, self.poll_id, interaction.user.id, self.candidate_id)
         if success:
             await interaction.response.edit_message(content=f"✅ Oy verme işleminiz başarıyla kaydedildi! Tercihiniz: **{self.candidate_name}**", view=None)
             
@@ -55,9 +57,9 @@ class AdaySelect(discord.ui.Select):
     def __init__(self, poll_id: int, candidates: list, poll_title: str):
         options = [
             discord.SelectOption(
-                label=str(c["name"]),
+                label=str(c["name"])[:100],
                 value=str(c["candidate_id"]),
-                description=f"{c['name']} için oy ver"
+                description=f"{c['name']} için oy ver"[:100]
             )
             for c in candidates
         ]
@@ -72,7 +74,7 @@ class AdaySelect(discord.ui.Select):
         self.poll_title = poll_title
 
     async def callback(self, interaction: discord.Interaction):
-        poll = database.get_poll_by_id(self.poll_id)
+        poll = await asyncio.to_thread(database.get_poll_by_id, self.poll_id)
         if not poll:
             return await interaction.response.send_message("❌ Oylama bulunamadı.", ephemeral=True)
 
@@ -82,11 +84,12 @@ class AdaySelect(discord.ui.Select):
             if not user_has_role and not interaction.user.guild_permissions.administrator and interaction.user.id != interaction.guild.owner_id:
                 return await interaction.response.send_message(f"❌ Bu oylamada yalnızca <@&{target_role_id}> rolüne sahip üyeler oy kullanabilir.", ephemeral=True)
 
-        if database.has_voted(self.poll_id, interaction.user.id):
+        has_voted_result = await asyncio.to_thread(database.has_voted, self.poll_id, interaction.user.id)
+        if has_voted_result:
             return await interaction.response.send_message("❌ Daha önce bu oylamada oy kullandınız. Tekrar oy kullanamazsınız!", ephemeral=True)
 
         selected_candidate_id = int(self.values[0])
-        candidates = database.get_candidates(self.poll_id)
+        candidates = await asyncio.to_thread(database.get_candidates, self.poll_id)
         
         candidate_name = "Bilinmeyen Aday"
         for c in candidates:
@@ -103,11 +106,10 @@ class AdaySelect(discord.ui.Select):
 
 
 class OylamaView(discord.ui.View):
-    def __init__(self, poll_id: int, poll_title: str):
+    def __init__(self, poll_id: int, poll_title: str, candidates: list = None):
         super().__init__(timeout=None)
         self.poll_id = poll_id
         self.poll_title = poll_title
-        candidates = database.get_candidates(poll_id)
         if candidates:
             self.add_item(AdaySelect(poll_id, candidates, poll_title))
 
@@ -120,7 +122,7 @@ class İptalOnayView(discord.ui.View):
 
     @discord.ui.button(label="Evet, İptal Et", style=discord.ButtonStyle.green)
     async def evet_iptal(self, interaction: discord.Interaction, button: discord.ui.Button):
-        poll = database.get_poll_by_id(self.poll_id)
+        poll = await asyncio.to_thread(database.get_poll_by_id, self.poll_id)
         if poll:
             ch_id = poll["channel_id"]
             msg_id = poll["message_id"]
@@ -133,7 +135,7 @@ class İptalOnayView(discord.ui.View):
                 except Exception:
                     pass
         
-        database.delete_poll(self.poll_id)
+        await asyncio.to_thread(database.delete_poll, self.poll_id)
         await interaction.response.edit_message(content=f"✅ **{self.poll_title}** isimli oylama tamamen iptal edildi ve silindi.", view=None)
 
     @discord.ui.button(label="Hayır, Vazgeç", style=discord.ButtonStyle.red)
@@ -153,14 +155,14 @@ class AdayKaldirOnayView(discord.ui.View):
 
     @discord.ui.button(label="Evet, Kaldır", style=discord.ButtonStyle.green)
     async def evet_kaldir(self, interaction: discord.Interaction, button: discord.ui.Button):
-        database.remove_candidate(self.poll_id, self.candidate_id)
+        await asyncio.to_thread(database.remove_candidate, self.poll_id, self.candidate_id)
 
         channel = interaction.guild.get_channel(self.ch_id)
         if channel and self.msg_id:
             try:
                 msg = await channel.fetch_message(self.msg_id)
-                candidates = database.get_candidates(self.poll_id)
-                poll = database.get_poll_by_id(self.poll_id)
+                candidates = await asyncio.to_thread(database.get_candidates, self.poll_id)
+                poll = await asyncio.to_thread(database.get_poll_by_id, self.poll_id)
                 
                 embed = discord.Embed(
                     title=f"🗳️ {self.poll_title}",
@@ -178,7 +180,7 @@ class AdayKaldirOnayView(discord.ui.View):
 
                 embed.set_footer(text="Her kullanıcının 1 oy hakkı vardır ve kullanılan oylar değiştirilemez.")
 
-                view = OylamaView(self.poll_id, self.poll_title) if candidates else discord.ui.View()
+                view = OylamaView(self.poll_id, self.poll_title, candidates) if candidates else discord.ui.View()
                 await msg.edit(embed=embed, view=view)
             except Exception as e:
                 print(f"Aday kaldırma sonrası mesaj güncelleme hatası: {e}")
@@ -203,7 +205,7 @@ class PollCommands(commands.Cog):
         return any(role.id == config.AUTHORIZED_ROLE_ID for role in interaction.user.roles)
 
     async def active_poll_autocomplete(self, interaction: discord.Interaction, current: str):
-        polls = database.get_active_polls()
+        polls = await asyncio.to_thread(database.get_active_polls)
         choices = []
         for p in polls:
             p_id = p["poll_id"]
@@ -222,7 +224,7 @@ class PollCommands(commands.Cog):
         except ValueError:
             return []
 
-        candidates = database.get_candidates(poll_id)
+        candidates = await asyncio.to_thread(database.get_candidates, poll_id)
         choices = []
         for c in candidates:
             c_id = c["candidate_id"]
@@ -250,7 +252,7 @@ class PollCommands(commands.Cog):
         target_role_id = oy_kullanabilecek_rol.id if oy_kullanabilecek_rol else None
         
         try:
-            poll_id = database.add_poll(baslik, kanal.id, target_role_id)
+            poll_id = await asyncio.to_thread(database.add_poll, baslik, kanal.id, target_role_id)
         except Exception as e:
             return await interaction.followup.send(f"❌ Veritabanı kayıt hatası: {str(e)}", ephemeral=True)
 
@@ -264,7 +266,7 @@ class PollCommands(commands.Cog):
         embed.set_footer(text="Her kullanıcının 1 oy hakkı vardır ve kullanılan oylar değiştirilemez.")
 
         msg = await kanal.send(embed=embed)
-        database.set_poll_message_id(poll_id, msg.id)
+        await asyncio.to_thread(database.set_poll_message_id, poll_id, msg.id)
 
         await interaction.followup.send(f"✅ Oylama başarıyla {kanal.mention} kanalında başlatıldı! Aday eklemek için `/adayekle` komutunu kullanabilirsiniz.", ephemeral=True)
 
@@ -282,7 +284,7 @@ class PollCommands(commands.Cog):
         except ValueError:
             return await interaction.followup.send("❌ Geçersiz oylama seçimi.", ephemeral=True)
 
-        poll = database.get_poll_by_id(poll_id)
+        poll = await asyncio.to_thread(database.get_poll_by_id, poll_id)
         if not poll:
             return await interaction.followup.send("❌ Oylama bulunamadı.", ephemeral=True)
 
@@ -290,13 +292,13 @@ class PollCommands(commands.Cog):
         p_chid = poll["channel_id"]
         p_msgid = poll["message_id"]
 
-        database.add_candidate(poll_id, aday_ismi)
+        await asyncio.to_thread(database.add_candidate, poll_id, aday_ismi)
 
         channel = interaction.guild.get_channel(p_chid)
         if channel and p_msgid:
             try:
                 msg = await channel.fetch_message(p_msgid)
-                candidates = database.get_candidates(poll_id)
+                candidates = await asyncio.to_thread(database.get_candidates, poll_id)
                 
                 embed = discord.Embed(
                     title=f"🗳️ {p_title}",
@@ -309,7 +311,7 @@ class PollCommands(commands.Cog):
                     embed.add_field(name="🔒 Kısıtlama", value=f"Yalnızca <@&{poll['target_role_id']}> rolüne sahip üyeler oy kullanabilir.", inline=False)
                 embed.set_footer(text="Her kullanıcının 1 oy hakkı vardır ve kullanılan oylar değiştirilemez.")
 
-                view = OylamaView(poll_id, p_title)
+                view = OylamaView(poll_id, p_title, candidates)
                 await msg.edit(embed=embed, view=view)
             except Exception as e:
                 print(f"Mesaj güncelleme hatası: {e}")
@@ -329,11 +331,11 @@ class PollCommands(commands.Cog):
         except ValueError:
             return await interaction.response.send_message("❌ Geçersiz seçim yaptınız.", ephemeral=True)
 
-        poll = database.get_poll_by_id(poll_id)
+        poll = await asyncio.to_thread(database.get_poll_by_id, poll_id)
         if not poll:
             return await interaction.response.send_message("❌ Oylama bulunamadı.", ephemeral=True)
 
-        candidates = database.get_candidates(poll_id)
+        candidates = await asyncio.to_thread(database.get_candidates, poll_id)
         candidate = next((c for c in candidates if c["candidate_id"] == candidate_id), None)
         if not candidate:
             return await interaction.response.send_message("❌ Belirtilen aday bu oylamada bulunamadı.", ephemeral=True)
@@ -364,7 +366,7 @@ class PollCommands(commands.Cog):
         except ValueError:
             return await interaction.followup.send("❌ Geçersiz oylama seçimi.", ephemeral=True)
 
-        poll = database.get_poll_by_id(poll_id)
+        poll = await asyncio.to_thread(database.get_poll_by_id, poll_id)
         if not poll:
             return await interaction.followup.send("❌ Oylama bulunamadı.", ephemeral=True)
 
@@ -372,8 +374,8 @@ class PollCommands(commands.Cog):
         p_chid = poll["channel_id"]
         p_msgid = poll["message_id"]
 
-        candidates = database.get_candidates(poll_id)
-        database.close_poll(poll_id)
+        candidates = await asyncio.to_thread(database.get_candidates, poll_id)
+        await asyncio.to_thread(database.close_poll, poll_id)
 
         total_votes = sum(c["votes"] for c in candidates)
 
@@ -439,7 +441,7 @@ class PollCommands(commands.Cog):
         except ValueError:
             return await interaction.response.send_message("❌ Geçersiz oylama seçimi.", ephemeral=True)
 
-        poll = database.get_poll_by_id(poll_id)
+        poll = await asyncio.to_thread(database.get_poll_by_id, poll_id)
         if not poll:
             return await interaction.response.send_message("❌ Oylama bulunamadı.", ephemeral=True)
 
