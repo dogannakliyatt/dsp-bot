@@ -8,7 +8,7 @@ import config
 
 active_giveaways = {}
 
-# --- MODAL PENCERELERİ (GİRDİ ALMA MENÜLERİ) ---
+# --- MODAL PENCERELERİ ---
 
 class EditPrizeModal(discord.ui.Modal, title="🎁 Ödülü Düzenle"):
     new_prize = discord.ui.TextInput(
@@ -147,7 +147,6 @@ class RerollView(discord.ui.View):
         if not self.is_authorized(interaction.user, interaction.guild):
             return await interaction.response.send_message("❌ Bu butonu sadece yetkililer kullanabilir.", ephemeral=True)
 
-        # Henüz kazanmamış adayları filtrele
         available_pool = [uid for uid in self.participants if uid not in self.won_users]
 
         if not available_pool:
@@ -169,7 +168,6 @@ class RerollView(discord.ui.View):
         )
         reroll_embed.set_footer(text="Demokratik Sol Parti Çekiliş Sistemi")
 
-        # Yeni kazanan mesajını altına tekrar butonunu ekleyerek gönder
         await interaction.channel.send(
             content=f"🎉 {winner_mention}",
             embed=reroll_embed,
@@ -196,15 +194,18 @@ class GiveawayView(discord.ui.View):
 
         if user_id in participants:
             participants.remove(user_id)
-            await interaction.response.send_message("❌ Çekilişten ayrıldınız.", ephemeral=True)
+            resp_text = "❌ Çekilişten ayrıldınız."
         else:
             participants.add(user_id)
-            await interaction.response.send_message("✅ Çekilişe başarıyla katıldınız! Şansınız bol olsun.", ephemeral=True)
+            resp_text = "✅ Çekilişe başarıyla katıldınız! Şansınız bol olsun."
 
         button.label = f"Çekilişe Katıl ({len(participants)})"
+        embed = data["create_embed"]()
+
+        # Mesajı ve butonu tek seferde güncelle
         try:
-            embed = data["create_embed"]()
-            await interaction.message.edit(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.followup.send(resp_text, ephemeral=True)
         except Exception:
             pass
 
@@ -280,7 +281,6 @@ class GiveawayCog(commands.Cog):
         )
         celebrate_embed.set_footer(text="Demokratik Sol Parti Çekiliş Sistemi")
         
-        # Kutunun altına Tekrar Çek butonunu ekle
         reroll_view = RerollView(
             prize=data["prize"], 
             host=data["host"], 
@@ -289,7 +289,6 @@ class GiveawayCog(commands.Cog):
         )
         await channel.send(content=f"🎉 {winners_mentions}", embed=celebrate_embed, view=reroll_view)
 
-    # ------------------ /çekiliş KOMUTU ------------------
     @app_commands.command(name="çekiliş", description="Modern butonlu yeni bir çekiliş başlatır.")
     @app_commands.describe(
         ödül="Çekilişte verilecek hediye / ödül / makam",
@@ -390,7 +389,6 @@ class GiveawayCog(commands.Cog):
         active_giveaways[guild_id] = giveaway_data
         asyncio.create_task(self.run_giveaway_loop(guild_id))
 
-    # ------------------ /çekilişiptal KOMUTU ------------------
     @app_commands.command(name="çekilişiptal", description="Aktif olan çekilişi bir sebep belirterek iptal eder.")
     @app_commands.describe(sebep="Çekilişin iptal edilme sebebi")
     async def cancel_giveaway(self, interaction: discord.Interaction, sebep: str):
@@ -424,7 +422,6 @@ class GiveawayCog(commands.Cog):
 
         await interaction.response.send_message(f"✅ Çekiliş başarıyla iptal edildi.\n**Sebep:** {sebep}", ephemeral=True)
 
-    # ------------------ /çekilişyönet KOMUTU ------------------
     @app_commands.command(name="çekilişyönet", description="Aktif çekilişin süresini, ödülünü, şartlarını ve kazanan sayısını düzenler.")
     async def manage_giveaway(self, interaction: discord.Interaction):
         if not self.is_authorized(interaction):
