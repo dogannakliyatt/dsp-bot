@@ -14,6 +14,7 @@ MEMBER_CHANNEL_ID = getattr(config, "STAT_MEMBER_COUNT_CHANNEL_ID", 154297088103
 class StatChannels(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self._lock = asyncio.Lock()
         self.update_stats_loop.start()
 
     def cog_unload(self):
@@ -29,29 +30,47 @@ class StatChannels(commands.Cog):
     # ==========================================
 
     async def update_gb_channel(self, guild: discord.Guild):
-        channel = guild.get_channel(GB_CHANNEL_ID)
-        if not channel:
+        if not guild:
             return
 
-        gb_role = guild.get_role(GB_ROLE_ID)
-        names = []
-        if gb_role:
-            for member in gb_role.members:
-                if not member.bot:
+        async with self._lock:
+            channel = guild.get_channel(GB_CHANNEL_ID)
+            if not channel:
+                return
+
+            # Sunucu üye listesini önbellekle tam eşitle
+            if not guild.chunked:
+                try:
+                    await guild.chunk()
+                except Exception:
+                    pass
+
+            gb_members = []
+            seen_ids = set()
+
+            for member in guild.members:
+                if member.bot:
+                    continue
+                # Doğrudan rol ID'lerini kontrol et
+                has_gb = any(r.id == GB_ROLE_ID for r in member.roles)
+                if has_gb and member.id not in seen_ids:
+                    seen_ids.add(member.id)
                     clean = self.get_clean_name(member.display_name)
                     if clean:
-                        names.append(clean)
+                        gb_members.append(clean)
 
-        new_name = f"👑︱GB: {' - '.join(names)}" if names else "👑︱GB:"
-        new_name = new_name[:99]
+            new_name = f"👑︱GB: {' - '.join(gb_members)}" if gb_members else "👑︱GB:"
+            new_name = new_name[:99]
 
-        if channel.name != new_name:
-            try:
-                await channel.edit(name=new_name, reason="Otomatik GB Listesi Senkronizasyonu")
-            except discord.HTTPException:
-                pass
+            if channel.name != new_name:
+                try:
+                    await channel.edit(name=new_name, reason="Anlık GB Rolü/Üyesi Güncellemesi")
+                except discord.HTTPException:
+                    pass
 
     async def update_member_count_channel(self, guild: discord.Guild):
+        if not guild:
+            return
         channel = guild.get_channel(MEMBER_CHANNEL_ID)
         if not channel:
             return
@@ -66,6 +85,8 @@ class StatChannels(commands.Cog):
                 pass
 
     async def update_ideology_channel(self, guild: discord.Guild, value: str = None):
+        if not guild:
+            return
         channel = guild.get_channel(IDEOLOGY_CHANNEL_ID)
         if not channel:
             return
@@ -81,6 +102,8 @@ class StatChannels(commands.Cog):
                 pass
 
     async def update_compass_channel(self, guild: discord.Guild, value: str = None):
+        if not guild:
+            return
         channel = guild.get_channel(COMPASS_CHANNEL_ID)
         if not channel:
             return
@@ -115,19 +138,16 @@ class StatChannels(commands.Cog):
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
         await self.update_member_count_channel(member.guild)
-        gb_role = member.guild.get_role(GB_ROLE_ID)
-        if gb_role and gb_role in member.roles:
+        had_gb = any(r.id == GB_ROLE_ID for r in member.roles)
+        if had_gb:
             await self.update_gb_channel(member.guild)
 
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
-        gb_role = after.guild.get_role(GB_ROLE_ID)
-        if not gb_role:
-            return
+        had_gb = any(r.id == GB_ROLE_ID for r in before.roles)
+        has_gb = any(r.id == GB_ROLE_ID for r in after.roles)
 
-        had_gb = gb_role in before.roles
-        has_gb = gb_role in after.roles
-
+        # Rol verildiğinde, rol alındığında veya GB olan kişinin takma adı değiştiğinde anında tetikle
         if (had_gb != has_gb) or (has_gb and before.display_name != after.display_name):
             await self.update_gb_channel(after.guild)
 
