@@ -79,7 +79,6 @@ class AdaySelect(discord.ui.Select):
                 candidate_name = c["name"]
                 break
 
-        # Onay modal/panelini direkt aç
         view = OyOnayView(self.poll_id, selected_candidate_id, candidate_name, self.poll_title)
         await interaction.response.send_message(
             content=f"**{candidate_name}** isimli adaya oy vermek istediğinize emin misiniz?",
@@ -127,6 +126,55 @@ class İptalOnayView(discord.ui.View):
         await interaction.response.edit_message(content="İptal işlemi vazgeçildi.", view=None)
 
 
+class AdayKaldirOnayView(discord.ui.View):
+    def __init__(self, poll_id: int, candidate_id: int, candidate_name: str, poll_title: str, ch_id: int, msg_id: int):
+        super().__init__(timeout=60)
+        self.poll_id = poll_id
+        self.candidate_id = candidate_id
+        self.candidate_name = candidate_name
+        self.poll_title = poll_title
+        self.ch_id = ch_id
+        self.msg_id = msg_id
+
+    @discord.ui.button(label="Evet, Kaldır", style=discord.ButtonStyle.green)
+    async def evet_kaldir(self, interaction: discord.Interaction, button: discord.ui.Button):
+        database.remove_candidate(self.poll_id, self.candidate_id)
+
+        # Oylama kutusundaki embed ve select menüsünü canlı güncelle
+        channel = interaction.guild.get_channel(self.ch_id)
+        if channel and self.msg_id:
+            try:
+                msg = await channel.fetch_message(self.msg_id)
+                candidates = database.get_candidates(self.poll_id)
+                
+                embed = discord.Embed(
+                    title=f"🗳️ {self.poll_title}",
+                    description="Aşağıdaki açılır menüden oy vermek istediğiniz adayı seçip oyunuzu kullanabilirsiniz." if candidates else "Adaylar eklendikçe menü güncellenecektir.",
+                    color=config.COLOR_HEX
+                )
+                if candidates:
+                    cand_list = "\n".join([f"• **{c['name']}**" for c in candidates])
+                    embed.add_field(name="Mevcut Adaylar", value=cand_list, inline=False)
+                else:
+                    embed.add_field(name="Mevcut Adaylar", value="*Şu anda oylamada aday bulunmamaktadır.*", inline=False)
+                
+                embed.set_footer(text="Her kullanıcının 1 oy hakkı vardır ve kullanılan oylar değiştirilemez.")
+
+                view = OylamaView(self.poll_id, self.poll_title)
+                await msg.edit(embed=embed, view=view)
+            except Exception as e:
+                print(f"Aday kaldırma sonrası mesaj güncelleme hatası: {e}")
+
+        await interaction.response.edit_message(
+            content=f"✅ **{self.candidate_name}** adayı **{self.poll_title}** oylamasından başarıyla kaldırıldı.",
+            view=None
+        )
+
+    @discord.ui.button(label="Hayır, Vazgeç", style=discord.ButtonStyle.red)
+    async def hayir_kaldir(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content="Aday kaldırma işlemi iptal edildi.", view=None)
+
+
 class PollCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -144,6 +192,26 @@ class PollCommands(commands.Cog):
             p_title = p["title"]
             if current.lower() in p_title.lower():
                 choices.append(app_commands.Choice(name=p_title[:100], value=str(p_id)))
+        return choices[:25]
+
+    async def candidate_autocomplete(self, interaction: discord.Interaction, current: str):
+        # Seçilen oylama parametresini yakala
+        selected_poll = interaction.namespace.oylama
+        if not selected_poll:
+            return []
+
+        try:
+            poll_id = int(selected_poll)
+        except ValueError:
+            return []
+
+        candidates = database.get_candidates(poll_id)
+        choices = []
+        for c in candidates:
+            c_id = c["candidate_id"]
+            c_name = c["name"]
+            if current.lower() in c_name.lower():
+                choices.append(app_commands.Choice(name=c_name[:100], value=str(c_id)))
         return choices[:25]
 
     @app_commands.command(name="oylamabaşlat", description="Yeni bir oylama başlatır.")
@@ -210,6 +278,40 @@ class PollCommands(commands.Cog):
                 print(f"Mesaj güncelleme hatası: {e}")
 
         await interaction.response.send_message(f"✅ **{aday_ismi}** adayı **{p_title}** oylamasına başarıyla eklendi!", ephemeral=True)
+
+    @app_commands.command(name="adaykaldır", description="Aktif bir oylamadan adayı kaldırır.")
+    @app_commands.describe(oylama="Aday çıkarılacak oylama", aday="Kaldırılacak aday")
+    @app_commands.autocomplete(oylama=active_poll_autocomplete, aday=candidate_autocomplete)
+    async def aday_kaldir(self, interaction: discord.Interaction, oylama: str, aday: str):
+        if not self.is_authorized(interaction):
+            return await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz yok.", ephemeral=True)
+
+        try:
+            poll_id = int(oylama)
+            candidate_id = int(aday)
+        except ValueError:
+            return await interaction.response.send_message("❌ Geçersiz seçim yaptınız.", ephemeral=True)
+
+        poll = database.get_poll_by_id(poll_id)
+        if not poll:
+            return await interaction.response.send_message("❌ Oylama bulunamadı.", ephemeral=True)
+
+        candidates = database.get_candidates(poll_id)
+        candidate = next((c for c in candidates if c["candidate_id"] == candidate_id), None)
+        if not candidate:
+            return await interaction.response.send_message("❌ Belirtilen aday bu oylamada bulunamadı.", ephemeral=True)
+
+        p_title = poll["title"]
+        p_chid = poll["channel_id"]
+        p_msgid = poll["message_id"]
+        c_name = candidate["name"]
+
+        view = AdayKaldirOnayView(poll_id, candidate_id, c_name, p_title, p_chid, p_msgid)
+        await interaction.response.send_message(
+            content=f"⚠️ **{p_title}** oylamasından **{c_name}** adayını çıkarmak istediğinize emin misiniz?",
+            view=view,
+            ephemeral=True
+        )
 
     @app_commands.command(name="oylamabitir", description="Oylamayı sonlandırır, log kanalına sonuçları iletir ve kanalı kapatır.")
     @app_commands.describe(oylama="Sonlandırılacak oylama")
