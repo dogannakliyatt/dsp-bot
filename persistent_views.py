@@ -113,11 +113,10 @@ class AdaySelect(discord.ui.Select):
 
 
 class OylamaView(discord.ui.View):
-    def __init__(self, poll_id: int, poll_title: str):
+    def __init__(self, poll_id: int, poll_title: str, candidates: list = None):
         super().__init__(timeout=None)
         self.poll_id = poll_id
         self.poll_title = poll_title
-        candidates = database.get_candidates(poll_id)
         if candidates:
             self.add_item(AdaySelect(poll_id, candidates, poll_title))
 
@@ -185,7 +184,8 @@ async def register_all_persistent_views(bot: discord.Client):
     try:
         active_polls = await asyncio.to_thread(database.get_active_polls)
         for p in active_polls:
-            bot.add_view(OylamaView(p["poll_id"], p["title"]))
+            candidates = await asyncio.to_thread(database.get_candidates, p["poll_id"])
+            bot.add_view(OylamaView(p["poll_id"], p["title"], candidates))
         print(f"🛡️ [KORUMA] {len(active_polls)} adet oylama ve çekiliş butonu kalıcı hafızaya alındı.")
     except Exception as e:
         print(f"⚠️ [KORUMA HATASI] Oylamalar yüklenemedi: {e}")
