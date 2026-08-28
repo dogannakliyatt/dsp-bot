@@ -96,10 +96,10 @@ class RPTools(commands.Cog):
         embed.set_footer(text="Demokratik Sol Parti Hükümet Protokolü")
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="partidüzeni", description="Demokratik Sol Parti Genel Merkez yönetimini listeler.")
+    @app_commands.command(name="partidüzeni", description="Demokratik Sol Parti Teşkilat Şemasını listeler.")
     async def partiliste(self, interaction: discord.Interaction):
         embed = discord.Embed(
-            title="🕊️ DEMOKRATİK SOL PARTİ GENEL MERKEZ DÜZENİ",
+            title="🕊️ DEMOKRATİK SOL PARTİ TEŞKİLAT ŞEMASI",
             color=config.COLOR_HEX,
             timestamp=datetime.datetime.now(datetime.timezone.utc)
         )
