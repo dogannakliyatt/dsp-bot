@@ -134,6 +134,8 @@ class GiveawayView(discord.ui.View):
         button.label = f"Çekilişe Katıl ({len(participants)})"
         
         end_dt = data["end_time"]
+        if isinstance(end_dt, str):
+            end_dt = datetime.datetime.fromisoformat(end_dt)
         if end_dt.tzinfo is None:
             end_dt = end_dt.replace(tzinfo=datetime.timezone.utc)
         end_ts = int(end_dt.timestamp())
