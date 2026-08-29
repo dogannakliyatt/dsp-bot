@@ -18,32 +18,48 @@ class MigrateOldLogs(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    def find_member_by_name(self, guild: discord.Guild, query_name: str):
+    def clean_text(self, text: str) -> str:
+        if not text:
+            return ""
+        return (
+            text.replace("İ", "i")
+            .replace("I", "ı")
+            .replace("Ş", "ş")
+            .replace("Ğ", "ğ")
+            .replace("Ü", "ü")
+            .replace("Ö", "ö")
+            .replace("Ç", "ç")
+            .lower()
+            .strip()
+        )
+
+    def find_member_by_raw_name(self, members: list, query_name: str):
         if not query_name:
             return None
-        
-        query_clean = query_name.strip().lower()
-        if len(query_clean) < 2:
+
+        # İsmi / işaretine göre bölüp makamsız ana ismi al
+        clean_query = self.clean_text(query_name.split("/")[0].replace("@", "").replace(">", "").strip())
+        if len(clean_query) < 2:
             return None
 
-        # 1. Birebir Tam Eşleşme (Makamlar hariç ana isim veya kullanıcı adı)
-        for member in guild.members:
-            base_display = member.display_name.split("/")[0].strip().lower()
-            if base_display == query_clean or member.name.lower() == query_clean:
-                return member
+        # 1. Birebir tam eşleşme (Display name veya kullanıcı adı)
+        for m in members:
+            m_display_base = self.clean_text(m.display_name.split("/")[0])
+            m_name = self.clean_text(m.name)
+            if clean_query == m_display_base or clean_query == m_name:
+                return m
 
-        # 2. Ön Eşleşme (İsimle başlayanlar)
-        for member in guild.members:
-            base_display = member.display_name.split("/")[0].strip().lower()
-            if base_display.startswith(query_clean) or member.name.lower().startswith(query_clean):
-                return member
+        # 2. Ön ek ve kapsama eşleşmesi
+        for m in members:
+            m_display_base = self.clean_text(m.display_name.split("/")[0])
+            if clean_query in m_display_base or m_display_base in clean_query:
+                return m
 
-        # Uyuşma bulunamazsa zorlama yapmadan None döner
         return None
 
     @app_commands.command(
         name="eskikayitlaricek", 
-        description="Nors botunun eski kayıtlarını tarayarak yetkili bilgileriyle veritabanına aktarır."
+        description="Nors botunun eski kayıtlarını yetkili ID'leriyle birlikte tarayarak veritabanına aktarır."
     )
     @app_commands.describe(limit="Taranacak maksimum mesaj sayısı (Varsayılan: 3000)")
     @is_bot_owner()
@@ -54,13 +70,15 @@ class MigrateOldLogs(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
-        if not interaction.guild.chunked:
-            try:
-                await interaction.guild.chunk()
-            except Exception:
-                pass
+        # Sunucudaki üyelerin tamamını Discord API'den eksiksiz çek
+        members_cache = []
+        try:
+            async for m in interaction.guild.fetch_members(limit=None):
+                members_cache.append(m)
+        except Exception:
+            members_cache = interaction.guild.members
 
-        # Yetkilisiz girilmiş eski kayıtları temizle
+        # Daha önce yetkilisiz kaydedilen eski kayıtları temizle
         await asyncio.to_thread(database.clear_empty_migrated_registers)
 
         success_count = 0
@@ -73,15 +91,26 @@ class MigrateOldLogs(commands.Cog):
                 continue
 
             processed_messages += 1
-            embed = msg.embeds[0] if msg.embeds else None
-            embed_desc = embed.description if embed and embed.description else ""
-            full_text = f"{msg.content}\n{embed_desc}"
 
-            # 1. Kaydedilen Üyeyi Bulma
+            # Embed içeriğindeki tüm veriyi (description + title + fields) topla
+            full_text = msg.content or ""
+            if msg.embeds:
+                emb = msg.embeds[0]
+                if emb.title:
+                    full_text += f"\n{emb.title}"
+                if emb.description:
+                    full_text += f"\n{emb.description}"
+                for f in emb.fields:
+                    full_text += f"\n{f.name}\n{f.value}"
+
+            # --------------------------------------------------
+            # 1. KAYDEDİLEN ÜYEYİ TESPİT ETME
+            # --------------------------------------------------
+            all_mentions = re.findall(r'<@!?(\d{17,20})>', full_text)
             target_user_id = None
-            target_match = re.search(r'<@!?(\d{17,20})>', full_text)
-            if target_match:
-                target_user_id = int(target_match.group(1))
+
+            if all_mentions:
+                target_user_id = int(all_mentions[0])
             elif msg.raw_mentions:
                 target_user_id = msg.raw_mentions[0]
 
@@ -89,38 +118,38 @@ class MigrateOldLogs(commands.Cog):
                 skipped_count += 1
                 continue
 
-            # 2. Kayıt Eden Yetkiliyi Bulma
+            # --------------------------------------------------
+            # 2. KAYIT EDEN YETKİLİYİ TESPİT ETME (KESİN MOTOR)
+            # --------------------------------------------------
             staff_id = None
 
-            # Metin içerisinde etiket var mı kontrolü
-            staff_mention_match = re.search(r'Kayd[ıi]\s*gerçekleştiren\s*yetkili[^\d<]*<@!?(\d{17,20})>', full_text, re.IGNORECASE)
-            
-            # Metin içerisinde düz isim var mı kontrolü (@İsim / Makam)
-            staff_section_match = re.search(
-                r'Kayd[ıi]\s*gerçekleştiren\s*yetkili\s*[\r\n]+[|>\s]*@?([^\r\n/]+)',
-                full_text,
-                re.IGNORECASE
-            )
-
+            # Yöntem A: 'Kaydı gerçekleştiren yetkili' metninden sonra gelen ID'yi ara
+            staff_mention_match = re.search(r'Kayd[ıi]\s*gerçekleştiren\s*yetkili[\s\S]*?<@!?(\d{17,20})>', full_text, re.IGNORECASE)
             if staff_mention_match:
                 staff_id = int(staff_mention_match.group(1))
-            elif staff_section_match:
-                raw_staff_name = staff_section_match.group(1).replace("@", "").strip()
-                matched_member = self.find_member_by_name(interaction.guild, raw_staff_name)
-                if matched_member:
-                    staff_id = matched_member.id
-                else:
-                    staff_id = None
-            elif len(msg.raw_mentions) > 1 and msg.raw_mentions[1] != target_user_id:
-                staff_id = msg.raw_mentions[1]
-            else:
-                staff_id = None
+
+            # Yöntem B: Eğer etiket yoksa ve düz metin yazılmışsa satırdan ismi çek
+            if not staff_id:
+                staff_name_match = re.search(r'Kayd[ıi]\s*gerçekleştiren\s*yetkili\s*[\r\n]+[|>\s]*@?([^\r\n]+)', full_text, re.IGNORECASE)
+                if staff_name_match:
+                    raw_name = staff_name_match.group(1)
+                    matched_member = self.find_member_by_raw_name(members_cache, raw_name)
+                    if matched_member:
+                        staff_id = matched_member.id
+
+            # Yöntem C: Metinde 2. bir etiket varsa ve kaydedilen üyeden farklıysa yetkilidir
+            if not staff_id and len(all_mentions) > 1:
+                potential_id = int(all_mentions[1])
+                if potential_id != target_user_id:
+                    staff_id = potential_id
 
             if staff_id:
                 staff_found_count += 1
 
-            # 3. İsim ve Rol Detayları
-            target_member = interaction.guild.get_member(target_user_id)
+            # --------------------------------------------------
+            # 3. İSİM VE MAKAM BİLGİLERİNİ ÇIKARMA
+            # --------------------------------------------------
+            target_member = next((m for m in members_cache if m.id == target_user_id), None)
             username = str(target_member) if target_member else f"Kullanıcı_{target_user_id}"
             new_nick = target_member.display_name if target_member else username
 
@@ -153,7 +182,9 @@ class MigrateOldLogs(commands.Cog):
 
             timestamp = msg.created_at
 
-            # 4. Veritabanına Ekleme
+            # --------------------------------------------------
+            # 4. VERİTABANINA AKTARMA
+            # --------------------------------------------------
             inserted = await asyncio.to_thread(
                 database.add_migrated_register,
                 user_id=target_user_id,
