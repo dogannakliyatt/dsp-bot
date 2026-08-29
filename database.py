@@ -108,7 +108,6 @@ def init_db():
             ALTER TABLE poll_votes ADD COLUMN IF NOT EXISTS candidate_id INTEGER DEFAULT NULL;
         ''')
 
-        # İstatistik ve Bilgi Kanalları Ayarları Tablosu
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS server_stats_settings (
                 key TEXT PRIMARY KEY,
@@ -127,6 +126,22 @@ def add_register(user_id, username, new_nick, parti_name, parti_code, rp_name, r
             INSERT INTO registers (user_id, username, new_nick, parti_name, parti_code, rp_name, rp_code, roles_given, staff_id)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         ''', (user_id, username, new_nick, parti_name, parti_code, rp_name, rp_code, roles_given, staff_id))
+
+def add_migrated_register(user_id, username, new_nick, parti_name, parti_code, rp_name, rp_code, roles_given, staff_id, timestamp):
+    with get_db_cursor(commit=True) as cursor:
+        # Aynı kullanıcı ve aynı tarih damgasına sahip mükerrer kayıtları engelle
+        cursor.execute('''
+            SELECT id FROM registers 
+            WHERE user_id = %s AND timestamp = %s
+        ''', (user_id, timestamp))
+        if cursor.fetchone():
+            return False
+
+        cursor.execute('''
+            INSERT INTO registers (user_id, username, new_nick, parti_name, parti_code, rp_name, rp_code, roles_given, staff_id, timestamp)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ''', (user_id, username, new_nick, parti_name, parti_code, rp_name, rp_code, roles_given, staff_id, timestamp))
+        return True
 
 def get_top_staff():
     with get_db_cursor(commit=False) as cursor:
