@@ -18,22 +18,55 @@ class MigrateOldLogs(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    def find_member_by_name(self, guild: discord.Guild, query_name: str):
+        if not query_name:
+            return None
+        
+        query_clean = query_name.strip().lower()
+        if len(query_clean) < 2:
+            return None
+
+        # 1. Birebir Tam Eşleşme (Makamlar hariç ana isim veya kullanıcı adı)
+        for member in guild.members:
+            base_display = member.display_name.split("/")[0].strip().lower()
+            if base_display == query_clean or member.name.lower() == query_clean:
+                return member
+
+        # 2. Ön Eşleşme (İsimle başlayanlar)
+        for member in guild.members:
+            base_display = member.display_name.split("/")[0].strip().lower()
+            if base_display.startswith(query_clean) or member.name.lower().startswith(query_clean):
+                return member
+
+        # Uyuşma bulunamazsa zorlama yapmadan None döner
+        return None
+
     @app_commands.command(
         name="eskikayitlaricek", 
-        description="Nors botunun attığı eski kayıt loglarını tarayarak veritabanına aktarır (Yalnızca Bot Sahibi)."
+        description="Nors botunun eski kayıtlarını tarayarak yetkili bilgileriyle veritabanına aktarır."
     )
-    @app_commands.describe(limit="Taranacak maksimum mesaj sayısı (Varsayılan: 2000)")
+    @app_commands.describe(limit="Taranacak maksimum mesaj sayısı (Varsayılan: 3000)")
     @is_bot_owner()
-    async def migrate_logs(self, interaction: discord.Interaction, limit: int = 2000):
+    async def migrate_logs(self, interaction: discord.Interaction, limit: int = 3000):
         channel = interaction.guild.get_channel(TARGET_LOG_CHANNEL_ID)
         if not channel:
             return await interaction.response.send_message(f"❌ Hedef kayıt kanalı (`ID: {TARGET_LOG_CHANNEL_ID}`) bulunamadı!", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
 
+        if not interaction.guild.chunked:
+            try:
+                await interaction.guild.chunk()
+            except Exception:
+                pass
+
+        # Yetkilisiz girilmiş eski kayıtları temizle
+        await asyncio.to_thread(database.clear_empty_migrated_registers)
+
         success_count = 0
         skipped_count = 0
         processed_messages = 0
+        staff_found_count = 0
 
         async for msg in channel.history(limit=limit, oldest_first=True):
             if msg.author.id != NORS_BOT_ID:
@@ -44,33 +77,53 @@ class MigrateOldLogs(commands.Cog):
             embed_desc = embed.description if embed and embed.description else ""
             full_text = f"{msg.content}\n{embed_desc}"
 
-            # 1. Kaydedilen Kullanıcı ID'si
+            # 1. Kaydedilen Üyeyi Bulma
             target_user_id = None
-            if msg.raw_mentions:
+            target_match = re.search(r'<@!?(\d{17,20})>', full_text)
+            if target_match:
+                target_user_id = int(target_match.group(1))
+            elif msg.raw_mentions:
                 target_user_id = msg.raw_mentions[0]
-            else:
-                user_match = re.search(r'<@!?(\d{17,20})>', full_text)
-                if user_match:
-                    target_user_id = int(user_match.group(1))
 
             if not target_user_id:
                 skipped_count += 1
                 continue
 
-            # 2. Kayıt Eden Yetkili ID'si
+            # 2. Kayıt Eden Yetkiliyi Bulma
             staff_id = None
-            staff_match = re.search(r'Kayd[ıi]\s*gerçekleştiren\s*yetkili[^\d<]*<@!?(\d{17,20})>', full_text, re.IGNORECASE)
-            if staff_match:
-                staff_id = int(staff_match.group(1))
-            elif len(msg.raw_mentions) > 1:
-                staff_id = msg.raw_mentions[1]
 
-            # 3. İsim ve Rol Bilgileri
+            # Metin içerisinde etiket var mı kontrolü
+            staff_mention_match = re.search(r'Kayd[ıi]\s*gerçekleştiren\s*yetkili[^\d<]*<@!?(\d{17,20})>', full_text, re.IGNORECASE)
+            
+            # Metin içerisinde düz isim var mı kontrolü (@İsim / Makam)
+            staff_section_match = re.search(
+                r'Kayd[ıi]\s*gerçekleştiren\s*yetkili\s*[\r\n]+[|>\s]*@?([^\r\n/]+)',
+                full_text,
+                re.IGNORECASE
+            )
+
+            if staff_mention_match:
+                staff_id = int(staff_mention_match.group(1))
+            elif staff_section_match:
+                raw_staff_name = staff_section_match.group(1).replace("@", "").strip()
+                matched_member = self.find_member_by_name(interaction.guild, raw_staff_name)
+                if matched_member:
+                    staff_id = matched_member.id
+                else:
+                    staff_id = None
+            elif len(msg.raw_mentions) > 1 and msg.raw_mentions[1] != target_user_id:
+                staff_id = msg.raw_mentions[1]
+            else:
+                staff_id = None
+
+            if staff_id:
+                staff_found_count += 1
+
+            # 3. İsim ve Rol Detayları
             target_member = interaction.guild.get_member(target_user_id)
             username = str(target_member) if target_member else f"Kullanıcı_{target_user_id}"
             new_nick = target_member.display_name if target_member else username
 
-            # Metindeki olası Parti ve RP makam kodlarını tespit etme
             parti_name = "Üye (Eski Kayıt)"
             parti_code = "Üye"
             rp_name = "Yok / Sivil"
@@ -100,7 +153,7 @@ class MigrateOldLogs(commands.Cog):
 
             timestamp = msg.created_at
 
-            # 4. Veritabanına Yazma
+            # 4. Veritabanına Ekleme
             inserted = await asyncio.to_thread(
                 database.add_migrated_register,
                 user_id=target_user_id,
@@ -121,13 +174,14 @@ class MigrateOldLogs(commands.Cog):
                 skipped_count += 1
 
         embed_result = discord.Embed(
-            title="📥 Eski Kayıtlar Başarıyla Aktarıldı",
+            title="📥 Eski Kayıt Aktarımı Tamamlandı",
             color=config.COLOR_HEX
         )
-        embed_result.add_field(name="🔍 Taranan Nors Mesajı", value=f"`{processed_messages}`", inline=True)
-        embed_result.add_field(name="✅ Eklenen Kayıt", value=f"`{success_count}`", inline=True)
-        embed_result.add_field(name="⏭️ Atlanan / Zaten Ekli", value=f"`{skipped_count}`", inline=True)
-        embed_result.set_footer(text="Veriler /kayıttop, /sicil ve /kayıtdışaaktar sistemine entegre edildi.")
+        embed_result.add_field(name="🔍 Taranan Mesaj", value=f"`{processed_messages}`", inline=True)
+        embed_result.add_field(name="✅ Eklenen / Güncellenen", value=f"`{success_count}`", inline=True)
+        embed_result.add_field(name="🛡️ Yetkilisi Eşleşen", value=f"`{staff_found_count}`", inline=True)
+        embed_result.add_field(name="⚠️ Yetkilisi Bulunamayan", value=f"`{processed_messages - staff_found_count}`", inline=True)
+        embed_result.set_footer(text="Veriler /kayıttop, /sicil ve /kayıtdışaaktar sistemine başarıyla işlendi.")
 
         await interaction.followup.send(embed=embed_result, ephemeral=True)
 
