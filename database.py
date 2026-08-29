@@ -129,12 +129,19 @@ def add_register(user_id, username, new_nick, parti_name, parti_code, rp_name, r
 
 def add_migrated_register(user_id, username, new_nick, parti_name, parti_code, rp_name, rp_code, roles_given, staff_id, timestamp):
     with get_db_cursor(commit=True) as cursor:
-        # Aynı kullanıcı ve aynı tarih damgasına sahip mükerrer kayıtları engelle
         cursor.execute('''
             SELECT id FROM registers 
             WHERE user_id = %s AND timestamp = %s
         ''', (user_id, timestamp))
-        if cursor.fetchone():
+        existing = cursor.fetchone()
+        
+        if existing:
+            if staff_id is not None:
+                cursor.execute('''
+                    UPDATE registers 
+                    SET staff_id = %s, parti_name = %s, parti_code = %s, rp_name = %s, rp_code = %s, roles_given = %s
+                    WHERE id = %s
+                ''', (staff_id, parti_name, parti_code, rp_name, rp_code, roles_given, existing["id"]))
             return False
 
         cursor.execute('''
@@ -142,6 +149,13 @@ def add_migrated_register(user_id, username, new_nick, parti_name, parti_code, r
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ''', (user_id, username, new_nick, parti_name, parti_code, rp_name, rp_code, roles_given, staff_id, timestamp))
         return True
+
+def clear_empty_migrated_registers():
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute('''
+            DELETE FROM registers 
+            WHERE staff_id IS NULL AND parti_name LIKE '%Eski Kayıt%'
+        ''')
 
 def get_top_staff():
     with get_db_cursor(commit=False) as cursor:
