@@ -8,6 +8,15 @@ class Maintenance(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    async def check_is_owner(self, user: discord.User) -> bool:
+        OWNER_ID = 651765260579241984
+        if user.id == OWNER_ID:
+            return True
+        try:
+            return await self.bot.is_owner(user)
+        except Exception:
+            return False
+
     @app_commands.command(name="bakım", description="Botu bakım moduna alır veya bakımdan çıkarır.")
     @app_commands.describe(durum="Bakım durumunu seçin")
     @app_commands.choices(durum=[
@@ -15,8 +24,7 @@ class Maintenance(commands.Cog):
         app_commands.Choice(name="Bakımdan Çıkar", value="cikar")
     ])
     async def bakım(self, interaction: discord.Interaction, durum: app_commands.Choice[str]):
-        # Sadece bot sahibi kullanabilir
-        if not await self.bot.is_owner(interaction.user):
+        if not await self.check_is_owner(interaction.user):
             return await interaction.response.send_message("❌ Bu komutu sadece botun sahibi kullanabilir.", ephemeral=True)
 
         if durum.value == "al":
