@@ -55,6 +55,7 @@ bot = BotClient()
 # 🛑 BAKIM MODU KONTROL DİNLEYİCİLERİ
 # ==========================================
 
+# 1. Prefix Komutları İçin Bakım Kontrolü (d!komut)
 @bot.check
 async def globally_block_commands(ctx: commands.Context):
     if bot.is_under_maintenance:
@@ -65,13 +66,17 @@ async def globally_block_commands(ctx: commands.Context):
         return False
     return True
 
-@bot.tree.check
+# 2. Slash Komutları İçin Bakım Kontrolü (/komut)
+@bot.tree.interaction_check
 async def globally_block_app_commands(interaction: discord.Interaction):
     if bot.is_under_maintenance:
         if await bot.is_owner(interaction.user):
             return True
         
-        await interaction.response.send_message("⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez.", ephemeral=True)
+        if interaction.response.is_done():
+            await interaction.followup.send("⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez.", ephemeral=True)
+        else:
+            await interaction.response.send_message("⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez.", ephemeral=True)
         return False
     return True
 
