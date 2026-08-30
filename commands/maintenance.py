@@ -15,6 +15,7 @@ class Maintenance(commands.Cog):
         app_commands.Choice(name="Bakımdan Çıkar", value="cikar")
     ])
     async def bakım(self, interaction: discord.Interaction, durum: app_commands.Choice[str]):
+        # Sadece bot sahibi kullanabilir
         if not await self.bot.is_owner(interaction.user):
             return await interaction.response.send_message("❌ Bu komutu sadece botun sahibi kullanabilir.", ephemeral=True)
 
@@ -22,7 +23,7 @@ class Maintenance(commands.Cog):
             self.bot.is_under_maintenance = True
             embed = discord.Embed(
                 title="⚙️ Bot Bakım Moduna Alındı",
-                description="Bot şu an bakım modundadır. Artık hiçbir kullanıcı komut kullanamaz.",
+                description="Bot şu an bakım modundadır. Sahip dışında kimse komut kullanamaz.",
                 color=discord.Color.orange(),
                 timestamp=datetime.datetime.now(datetime.timezone.utc)
             )
