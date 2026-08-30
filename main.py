@@ -59,6 +59,7 @@ bot = BotClient()
 @bot.check
 async def globally_block_commands(ctx: commands.Context):
     if bot.is_under_maintenance:
+        # Sadece botun sahibiyse geçişe izin ver
         if await bot.is_owner(ctx.author):
             return True
         
@@ -70,6 +71,7 @@ async def globally_block_commands(ctx: commands.Context):
 @bot.tree.interaction_check
 async def globally_block_app_commands(interaction: discord.Interaction):
     if bot.is_under_maintenance:
+        # Sadece botun sahibiyse geçişe izin ver
         if await bot.is_owner(interaction.user):
             return True
         
