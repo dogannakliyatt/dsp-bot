@@ -26,17 +26,6 @@ class BotClient(commands.Bot):
         )
         self.is_under_maintenance = False
 
-    async def is_bot_owner(self, user_id: int) -> bool:
-        if user_id == OWNER_ID:
-            return True
-        try:
-            app = await self.application_info()
-            if app.owner and app.owner.id == user_id:
-                return True
-        except Exception:
-            pass
-        return False
-
     async def setup_hook(self):
         await register_all_persistent_views(self)
 
@@ -64,49 +53,39 @@ class BotClient(commands.Bot):
 bot = BotClient()
 
 # ==========================================
-# 🛑 TÜM COG VE KOMUTLARI ENGELLEYEN MERKEZİ KONTROL
+# 🛑 EN SERT BAKIM DUVARI (HİÇ KİMSE GEÇEMEZ)
 # ==========================================
 
-async def global_maintenance_check(ctx_or_interaction) -> bool:
-    if not bot.is_under_maintenance:
-        return True
-    
-    user = getattr(ctx_or_interaction, "author", None) or getattr(ctx_or_interaction, "user", None)
-    if not user:
-        return False
-
-    is_owner = await bot.is_bot_owner(user.id)
-    if is_owner:
-        return True
-
-    msg = "⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez."
-    try:
-        if isinstance(ctx_or_interaction, commands.Context):
-            await ctx_or_interaction.reply(msg, mention_author=False)
-        elif isinstance(ctx_or_interaction, discord.Interaction):
-            if ctx_or_interaction.response.is_done():
-                await ctx_or_interaction.followup.send(msg, ephemeral=True)
-            else:
-                await ctx_or_interaction.response.send_message(msg, ephemeral=True)
-    except Exception:
-        pass
-
-    return False
-
 @bot.check
-async def ancient_prefix_check(ctx: commands.Context):
-    return await global_maintenance_check(ctx)
+async def absolute_prefix_block(ctx: commands.Context):
+    if bot.is_under_maintenance and ctx.author.id != OWNER_ID:
+        await ctx.reply("⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez.", mention_author=False)
+        return False
+    return True
 
 @bot.tree.interaction_check
-async def ancient_slash_check(interaction: discord.Interaction):
-    return await global_maintenance_check(interaction)
+async def absolute_slash_block(interaction: discord.Interaction):
+    if bot.is_under_maintenance and interaction.user.id != OWNER_ID:
+        msg = "⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez."
+        if interaction.response.is_done():
+            try:
+                await interaction.followup.send(msg, ephemeral=True)
+            except Exception:
+                pass
+        else:
+            try:
+                await interaction.response.send_message(msg, ephemeral=True)
+            except Exception:
+                pass
+        return False
+    return True
 
 # ==========================================
 # 🛠️ MANUEL SLASH KOMUT SENKRONİZASYON KOMUTU
 # ==========================================
 @bot.command(name="sync")
 async def sync_commands(ctx: commands.Context):
-    if not await bot.is_bot_owner(ctx.author.id):
+    if ctx.author.id != OWNER_ID:
         return await ctx.reply("❌ Bu komutu sadece botun sahibi kullanabilir.", mention_author=False)
     try:
         synced = await bot.tree.sync()
@@ -121,7 +100,7 @@ async def sync_commands(ctx: commands.Context):
 @bot.listen("on_interaction")
 async def log_interaction_listener(interaction: discord.Interaction):
     if interaction.type == discord.InteractionType.application_command:
-        if bot.is_under_maintenance and not await bot.is_bot_owner(interaction.user.id):
+        if bot.is_under_maintenance and interaction.user.id != OWNER_ID:
             return
 
         cmd_name = interaction.data.get("name", "bilinmeyen-komut")
@@ -176,7 +155,7 @@ async def log_interaction_listener(interaction: discord.Interaction):
 
 @bot.listen("on_command_completion")
 async def log_command_listener(ctx: commands.Context):
-    if bot.is_under_maintenance and not await bot.is_bot_owner(ctx.author.id):
+    if bot.is_under_maintenance and ctx.author.id != OWNER_ID:
         return
 
     if ctx.command.name in ["isimdeğistir", "isimdegistir", "rolver", "rolal", "sil", "temizle", "clear", "sync"]:
