@@ -7,43 +7,35 @@ import config
 class AutoMod(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # Engellenecek kelime ve kalıplar
-        self.forbidden_words = ["küfür1", "küfür2", "reklamkelimesi"] 
+        self.forbidden_words = ["küfür1", "küfür2"] 
         self.invite_links = ["discord.gg/", "discord.com/invite/"]
-
-    def is_authorized(self, member: discord.Member, guild: discord.Guild) -> bool:
-        if member.guild_permissions.administrator or member.id == guild.owner_id:
-            return True
-        return any(role.id == config.AUTHORIZED_ROLE_ID for role in member.roles)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if message.author.bot or not message.guild:
             return
 
-        # Yöneticiler automod denetiminden muaftır
-        if self.is_authorized(message.author, message.guild):
+        # config.py içerisindeki merkezi yetki kontrolü kullanılıyor
+        if config.is_authorized(message.author, message.guild):
             return
 
         content_lower = message.content.lower()
 
-        # 1. Davet Linki Kontrolü
         if any(link in content_lower for link in self.invite_links):
             try:
                 await message.delete()
                 warning = await message.channel.send(f"❌ {message.author.mention}, bu sunucuda reklam / davet linki paylaşmak yasaktır!")
-                await discord.utils.sleep_until(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=5))
+                await asyncio.sleep(5)
                 await warning.delete()
             except Exception:
                 pass
             return
 
-        # 2. Yasaklı Kelime Kontrolü
         if any(word in content_lower for word in self.forbidden_words):
             try:
                 await message.delete()
                 warning = await message.channel.send(f"❌ {message.author.mention}, mesajınız yasaklı kelime içerdiği için engellendi.")
-                await discord.utils.sleep_until(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=5))
+                await asyncio.sleep(5)
                 await warning.delete()
             except Exception:
                 pass
@@ -56,7 +48,7 @@ class AutoMod(commands.Cog):
         app_commands.Choice(name="Kaldır", value="kaldir")
     ])
     async def yasakli_kelime(self, interaction: discord.Interaction, islem: app_commands.Choice[str], kelime: str):
-        if not self.is_authorized(interaction.user, interaction.guild):
+        if not config.is_authorized(interaction.user, interaction.guild):
             return await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz yok.", ephemeral=True)
 
         clean_word = kelime.lower().strip()
