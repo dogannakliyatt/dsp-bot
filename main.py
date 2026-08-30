@@ -52,34 +52,31 @@ class BotClient(commands.Bot):
 bot = BotClient()
 
 # ==========================================
-# 🛑 BAKIM MODU KONTROL DİNLEYİCİLERİ
+# 🛑 KESİN BAKIM MODİKATÖRLERİ (DİNLEYİCİLER)
 # ==========================================
 
-# 1. Prefix Komutları İçin Bakım Kontrolü (d!komut)
+# 1. Prefix Komutları İçin Sıkı Bakım Kontrolü
 @bot.check
 async def globally_block_commands(ctx: commands.Context):
     if bot.is_under_maintenance:
-        # Sadece botun sahibiyse geçişe izin ver
-        if await bot.is_owner(ctx.author):
-            return True
-        
-        await ctx.reply("⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez.", mention_author=False)
-        return False
+        # Botun sahibi olup olmadığını net bir şekilde teyit et
+        is_owner = await bot.is_owner(ctx.author)
+        if not is_owner:
+            await ctx.reply("⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez.", mention_author=False)
+            return False
     return True
 
-# 2. Slash Komutları İçin Bakım Kontrolü (/komut)
+# 2. Slash Komutları İçin Sıkı Bakım Kontrolü
 @bot.tree.interaction_check
 async def globally_block_app_commands(interaction: discord.Interaction):
     if bot.is_under_maintenance:
-        # Sadece botun sahibiyse geçişe izin ver
-        if await bot.is_owner(interaction.user):
-            return True
-        
-        if interaction.response.is_done():
-            await interaction.followup.send("⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez.", ephemeral=True)
-        else:
-            await interaction.response.send_message("⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez.", ephemeral=True)
-        return False
+        is_owner = await bot.is_owner(interaction.user)
+        if not is_owner:
+            if interaction.response.is_done():
+                await interaction.followup.send("⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez.", ephemeral=True)
+            else:
+                await interaction.response.send_message("⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez.", ephemeral=True)
+            return False
     return True
 
 # ==========================================
@@ -101,6 +98,10 @@ async def sync_commands(ctx: commands.Context):
 @bot.listen("on_interaction")
 async def log_interaction_listener(interaction: discord.Interaction):
     if interaction.type == discord.InteractionType.application_command:
+        # Eğer bakımdayken engellenen bir komutsa loglamayı es geç
+        if bot.is_under_maintenance and not await bot.is_owner(interaction.user):
+            return
+
         cmd_name = interaction.data.get("name", "bilinmeyen-komut")
         
         if cmd_name.lower() in ["kayıt", "kayit", "isimdegistir", "kayıtsızver"]:
@@ -153,6 +154,9 @@ async def log_interaction_listener(interaction: discord.Interaction):
 
 @bot.listen("on_command_completion")
 async def log_command_listener(ctx: commands.Context):
+    if bot.is_under_maintenance and not await bot.is_owner(ctx.author):
+        return
+
     if ctx.command.name in ["isimdeğistir", "isimdegistir", "rolver", "rolal", "sil", "temizle", "clear", "sync"]:
         return
 
