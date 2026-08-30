@@ -1,6 +1,7 @@
 import os
 import discord
 from discord.ext import commands
+from discord import app_commands
 import datetime
 import config
 from keep_alive import keep_alive
@@ -22,12 +23,11 @@ class BotClient(commands.Bot):
             intents=intents,
             help_command=None
         )
+        self.is_under_maintenance = False
 
     async def setup_hook(self):
-        # 1. Buton ve Menü Koruma Sistemini Başlat
         await register_all_persistent_views(self)
 
-        # 2. Komut Modüllerini Yükle
         commands_dir = os.path.join(os.path.dirname(__file__), "commands")
         if os.path.exists(commands_dir):
             for filename in os.listdir(commands_dir):
@@ -50,6 +50,30 @@ class BotClient(commands.Bot):
         await self.change_presence(status=discord.Status.online, activity=activity)
 
 bot = BotClient()
+
+# ==========================================
+# 🛑 BAKIM MODU KONTROL DİNLEYİCİLERİ
+# ==========================================
+
+@bot.check
+async def globally_block_commands(ctx: commands.Context):
+    if bot.is_under_maintenance:
+        if await bot.is_owner(ctx.author):
+            return True
+        
+        await ctx.reply("⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez.", mention_author=False)
+        return False
+    return True
+
+@bot.tree.check
+async def globally_block_app_commands(interaction: discord.Interaction):
+    if bot.is_under_maintenance:
+        if await bot.is_owner(interaction.user):
+            return True
+        
+        await interaction.response.send_message("⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez.", ephemeral=True)
+        return False
+    return True
 
 # ==========================================
 # 🛠️ MANUEL SLASH KOMUT SENKRONİZASYON KOMUTU
