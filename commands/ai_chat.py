@@ -55,7 +55,7 @@ class GeminiAIChat(commands.Cog):
 
     async def fetch_gemini_response(self, prompt: str, author_name: str) -> str:
         try:
-            # Google'ın en güncel ve hızlı ücretsiz modeli: gemini-2.5-flash
+            # Güncel ve aktif olan model adı kullanıldı
             system_instruction = (
                 f"Sen Demokratik Sol Parti Discord sunucusunun resmi ve profesyonel yapay zeka asistanısın. "
                 f"Kullanıcılara son derece kibar, bilgili, net ve akıcı bir dille Türkçe yanıtlar veriyorsun. "
@@ -63,7 +63,7 @@ class GeminiAIChat(commands.Cog):
             )
             
             response = self.client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-3.5-flash',
                 contents=prompt,
                 config=genai.types.GenerateContentConfig(
                     system_instruction=system_instruction,
