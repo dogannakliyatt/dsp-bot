@@ -52,30 +52,62 @@ class BotClient(commands.Bot):
 bot = BotClient()
 
 # ==========================================
-# 🛑 KESİN BAKIM MODİKATÖRLERİ (DİNLEYİCİLER)
+# 🛑 EN BAŞTAN KESİN BAKIM ENGELLEYİCİLER
 # ==========================================
 
-# 1. Prefix Komutları İçin Sıkı Bakım Kontrolü
+# 1. Prefix (d!) Komutları İçin Sıkı Sınır
+@bot.listen("on_message")
+async def strict_prefix_maintenance_check(message: discord.Message):
+    if message.author.bot or not message.guild:
+        return
+    
+    if not bot.is_under_maintenance:
+        return
+
+    # Prefix ile başlayıp başlamadığını kontrol et
+    used_prefix = None
+    for p in bot.command_prefix:
+        if message.content.startswith(p):
+            used_prefix = p
+            break
+            
+    if used_prefix:
+        is_owner = await bot.is_owner(message.author)
+        if not is_owner:
+            # Mesajın komut olup olmadığını doğrula
+            cmd_name = message.content[len(used_prefix):].strip().split(" ")[0]
+            command = bot.get_command(cmd_name)
+            if command:
+                try:
+                    await message.reply("⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez.", mention_author=False)
+                except Exception:
+                    pass
+
+# Komutların çalışmasını engellemek için global check
 @bot.check
 async def globally_block_commands(ctx: commands.Context):
     if bot.is_under_maintenance:
-        # Botun sahibi olup olmadığını net bir şekilde teyit et
         is_owner = await bot.is_owner(ctx.author)
         if not is_owner:
-            await ctx.reply("⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez.", mention_author=False)
             return False
     return True
 
-# 2. Slash Komutları İçin Sıkı Bakım Kontrolü
+# 2. Slash (/) Komutları İçin Sıkı Sınır
 @bot.tree.interaction_check
 async def globally_block_app_commands(interaction: discord.Interaction):
     if bot.is_under_maintenance:
         is_owner = await bot.is_owner(interaction.user)
         if not is_owner:
             if interaction.response.is_done():
-                await interaction.followup.send("⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez.", ephemeral=True)
+                try:
+                    await interaction.followup.send("⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez.", ephemeral=True)
+                except Exception:
+                    pass
             else:
-                await interaction.response.send_message("⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez.", ephemeral=True)
+                try:
+                    await interaction.response.send_message("⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez.", ephemeral=True)
+                except Exception:
+                    pass
             return False
     return True
 
@@ -98,7 +130,6 @@ async def sync_commands(ctx: commands.Context):
 @bot.listen("on_interaction")
 async def log_interaction_listener(interaction: discord.Interaction):
     if interaction.type == discord.InteractionType.application_command:
-        # Eğer bakımdayken engellenen bir komutsa loglamayı es geç
         if bot.is_under_maintenance and not await bot.is_owner(interaction.user):
             return
 
