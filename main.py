@@ -8,6 +8,7 @@ from keep_alive import keep_alive
 from persistent_views import register_all_persistent_views
 
 AUDIT_LOG_CHANNEL_ID = getattr(config, "AUDIT_LOG_CHANNEL_ID", 1541807577837342834)
+OWNER_ID = 651765260579241984
 
 class BotClient(commands.Bot):
     def __init__(self):
@@ -24,6 +25,17 @@ class BotClient(commands.Bot):
             help_command=None
         )
         self.is_under_maintenance = False
+
+    async def is_bot_owner(self, user_id: int) -> bool:
+        if user_id == OWNER_ID:
+            return True
+        try:
+            app = await self.application_info()
+            if app.owner and app.owner.id == user_id:
+                return True
+        except Exception:
+            pass
+        return False
 
     async def setup_hook(self):
         await register_all_persistent_views(self)
@@ -52,71 +64,50 @@ class BotClient(commands.Bot):
 bot = BotClient()
 
 # ==========================================
-# 🛑 EN BAŞTAN KESİN BAKIM ENGELLEYİCİLER
+# 🛑 TÜM COG VE KOMUTLARI ENGELLEYEN MERKEZİ KONTROL
 # ==========================================
 
-# 1. Prefix (d!) Komutları İçin Sıkı Sınır
-@bot.listen("on_message")
-async def strict_prefix_maintenance_check(message: discord.Message):
-    if message.author.bot or not message.guild:
-        return
-    
+async def global_maintenance_check(ctx_or_interaction) -> bool:
     if not bot.is_under_maintenance:
-        return
+        return True
+    
+    user = getattr(ctx_or_interaction, "author", None) or getattr(ctx_or_interaction, "user", None)
+    if not user:
+        return False
 
-    # Prefix ile başlayıp başlamadığını kontrol et
-    used_prefix = None
-    for p in bot.command_prefix:
-        if message.content.startswith(p):
-            used_prefix = p
-            break
-            
-    if used_prefix:
-        is_owner = await bot.is_owner(message.author)
-        if not is_owner:
-            # Mesajın komut olup olmadığını doğrula
-            cmd_name = message.content[len(used_prefix):].strip().split(" ")[0]
-            command = bot.get_command(cmd_name)
-            if command:
-                try:
-                    await message.reply("⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez.", mention_author=False)
-                except Exception:
-                    pass
+    is_owner = await bot.is_bot_owner(user.id)
+    if is_owner:
+        return True
 
-# Komutların çalışmasını engellemek için global check
-@bot.check
-async def globally_block_commands(ctx: commands.Context):
-    if bot.is_under_maintenance:
-        is_owner = await bot.is_owner(ctx.author)
-        if not is_owner:
-            return False
-    return True
-
-# 2. Slash (/) Komutları İçin Sıkı Sınır
-@bot.tree.interaction_check
-async def globally_block_app_commands(interaction: discord.Interaction):
-    if bot.is_under_maintenance:
-        is_owner = await bot.is_owner(interaction.user)
-        if not is_owner:
-            if interaction.response.is_done():
-                try:
-                    await interaction.followup.send("⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez.", ephemeral=True)
-                except Exception:
-                    pass
+    msg = "⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez."
+    try:
+        if isinstance(ctx_or_interaction, commands.Context):
+            await ctx_or_interaction.reply(msg, mention_author=False)
+        elif isinstance(ctx_or_interaction, discord.Interaction):
+            if ctx_or_interaction.response.is_done():
+                await ctx_or_interaction.followup.send(msg, ephemeral=True)
             else:
-                try:
-                    await interaction.response.send_message("⚙️ Bot şu an bakım modundadır. İşlem gerçekleştirilemez.", ephemeral=True)
-                except Exception:
-                    pass
-            return False
-    return True
+                await ctx_or_interaction.response.send_message(msg, ephemeral=True)
+    except Exception:
+        pass
+
+    return False
+
+@bot.check
+async def ancient_prefix_check(ctx: commands.Context):
+    return await global_maintenance_check(ctx)
+
+@bot.tree.interaction_check
+async def ancient_slash_check(interaction: discord.Interaction):
+    return await global_maintenance_check(interaction)
 
 # ==========================================
 # 🛠️ MANUEL SLASH KOMUT SENKRONİZASYON KOMUTU
 # ==========================================
 @bot.command(name="sync")
-@commands.is_owner()
 async def sync_commands(ctx: commands.Context):
+    if not await bot.is_bot_owner(ctx.author.id):
+        return await ctx.reply("❌ Bu komutu sadece botun sahibi kullanabilir.", mention_author=False)
     try:
         synced = await bot.tree.sync()
         await ctx.reply(f"🔄 **{len(synced)}** adet slash komutu başarıyla senkronize edildi.", mention_author=False)
@@ -130,7 +121,7 @@ async def sync_commands(ctx: commands.Context):
 @bot.listen("on_interaction")
 async def log_interaction_listener(interaction: discord.Interaction):
     if interaction.type == discord.InteractionType.application_command:
-        if bot.is_under_maintenance and not await bot.is_owner(interaction.user):
+        if bot.is_under_maintenance and not await bot.is_bot_owner(interaction.user.id):
             return
 
         cmd_name = interaction.data.get("name", "bilinmeyen-komut")
@@ -185,7 +176,7 @@ async def log_interaction_listener(interaction: discord.Interaction):
 
 @bot.listen("on_command_completion")
 async def log_command_listener(ctx: commands.Context):
-    if bot.is_under_maintenance and not await bot.is_owner(ctx.author):
+    if bot.is_under_maintenance and not await bot.is_bot_owner(ctx.author.id):
         return
 
     if ctx.command.name in ["isimdeğistir", "isimdegistir", "rolver", "rolal", "sil", "temizle", "clear", "sync"]:
