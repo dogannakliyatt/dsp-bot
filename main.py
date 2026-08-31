@@ -53,7 +53,7 @@ class BotClient(commands.Bot):
 bot = BotClient()
 
 # ==========================================
-# 🛑 EN SERT BAKIM DUVARI (HİÇ KİMSE GEÇEMEZ)
+# 🛑 BAKIM KONTROL SİSTEMİ
 # ==========================================
 
 @bot.check
@@ -81,7 +81,7 @@ async def absolute_slash_block(interaction: discord.Interaction):
     return True
 
 # ==========================================
-# 🛠️ MANUEL SLASH KOMUT SENKRONİZASYON KOMUTU
+# 🛠️ MANUEL SLASH KOMUT SENKRONİZASYONU
 # ==========================================
 @bot.command(name="sync")
 async def sync_commands(ctx: commands.Context):
@@ -92,123 +92,6 @@ async def sync_commands(ctx: commands.Context):
         await ctx.reply(f"🔄 **{len(synced)}** adet slash komutu başarıyla senkronize edildi.", mention_author=False)
     except Exception as e:
         await ctx.reply(f"❌ Senkronizasyon hatası: {e}", mention_author=False)
-
-# ==========================================
-# 📊 MERKEZİ LOG VE RAPORLAMA SİSTEMİ
-# ==========================================
-
-@bot.listen("on_interaction")
-async def log_interaction_listener(interaction: discord.Interaction):
-    if interaction.type == discord.InteractionType.application_command:
-        if bot.is_under_maintenance and interaction.user.id != OWNER_ID:
-            return
-
-        cmd_name = interaction.data.get("name", "bilinmeyen-komut")
-        
-        if cmd_name.lower() in ["kayıt", "kayit", "isimdegistir", "kayıtsızver"]:
-            return
-
-        log_channel = interaction.guild.get_channel(AUDIT_LOG_CHANNEL_ID) if interaction.guild else None
-        if log_channel:
-            options = interaction.data.get("options", [])
-            params_list = []
-            
-            def parse_options(opts):
-                for opt in opts:
-                    if "value" in opt:
-                        params_list.append(f"**{opt.get('name')}**: `{opt.get('value')}`")
-                    elif "options" in opt:
-                        parse_options(opt.get("options"))
-                        
-            parse_options(options)
-            params_str = "\n".join(params_list) if params_list else "Parametre girilmedi"
-
-            if cmd_name in ["yasakla", "at", "sustur"]:
-                embed_color = discord.Color.red()
-            elif cmd_name in ["yasaklamakaldır", "susturmakaldır"]:
-                embed_color = discord.Color.green()
-            elif "oylama" in cmd_name:
-                embed_color = discord.Color.purple()
-            elif cmd_name in ["çekiliş", "katıl"]:
-                embed_color = discord.Color.gold()
-            elif cmd_name in ["mesajsil", "sil"]:
-                embed_color = discord.Color.dark_red()
-            else:
-                embed_color = discord.Color.from_rgb(0, 168, 243)
-
-            embed = discord.Embed(
-                title="⚡ Slash Komutu Kullanıldı",
-                color=embed_color,
-                timestamp=datetime.datetime.now(datetime.timezone.utc)
-            )
-            embed.add_field(name="• Komut", value=f"`/{cmd_name}`", inline=True)
-            embed.add_field(name="• Yetkili / Kullanıcı", value=interaction.user.mention, inline=True)
-            embed.add_field(name="• Kanal", value=interaction.channel.mention if interaction.channel else "Bilinmiyor", inline=True)
-            embed.add_field(name="• Girilen Bilgiler", value=params_str, inline=False)
-            embed.set_thumbnail(url=interaction.user.display_avatar.url)
-            embed.set_footer(text=f"Kullanıcı ID: {interaction.user.id}")
-
-            try:
-                await log_channel.send(embed=embed)
-            except Exception:
-                pass
-
-@bot.listen("on_command_completion")
-async def log_command_listener(ctx: commands.Context):
-    if bot.is_under_maintenance and ctx.author.id != OWNER_ID:
-        return
-
-    if ctx.command.name in ["isimdeğistir", "isimdegistir", "rolver", "rolal", "sil", "temizle", "clear", "sync"]:
-        return
-
-    log_channel = ctx.guild.get_channel(AUDIT_LOG_CHANNEL_ID) if ctx.guild else None
-    if not log_channel:
-        return
-
-    args_str = " ".join([str(arg) for arg in ctx.args[2:]]) if len(ctx.args) > 2 else "Parametre yok"
-    if ctx.kwargs:
-        kwargs_str = ", ".join([f"{k}: `{v}`" for k, v in ctx.kwargs.items()])
-        args_str = f"{args_str} | {kwargs_str}" if args_str != "Parametre yok" else kwargs_str
-
-    embed = discord.Embed(
-        title="🛠️ Metin Komutu Çalıştırıldı",
-        color=discord.Color.orange(),
-        timestamp=datetime.datetime.now(datetime.timezone.utc)
-    )
-    embed.add_field(name="• Komut", value=f"`{ctx.prefix}{ctx.command.name}`", inline=True)
-    embed.add_field(name="• Yetkili", value=ctx.author.mention, inline=True)
-    embed.add_field(name="• Kanal", value=ctx.channel.mention, inline=True)
-    embed.add_field(name="• Girilen Değerler", value=f"`{args_str}`", inline=False)
-    embed.set_thumbnail(url=ctx.author.display_avatar.url)
-    embed.set_footer(text=f"Kullanıcı ID: {ctx.author.id}")
-
-    try:
-        await log_channel.send(embed=embed)
-    except Exception:
-        pass
-
-@bot.listen("on_bulk_message_delete")
-async def log_bulk_delete_listener(messages):
-    if not messages:
-        return
-    guild = messages[0].guild
-    channel = messages[0].channel
-    log_channel = guild.get_channel(AUDIT_LOG_CHANNEL_ID) if guild else None
-    if not log_channel:
-        return
-
-    embed = discord.Embed(
-        title="🗑️ Toplu Mesaj Silindi",
-        description=f"{channel.mention} kanalında toplam **{len(messages)}** adet mesaj temizlendi.",
-        color=discord.Color.dark_red(),
-        timestamp=datetime.datetime.now(datetime.timezone.utc)
-    )
-    embed.set_footer(text=f"Kanal ID: {channel.id}")
-
-    try:
-        await log_channel.send(embed=embed)
-    except Exception:
-        pass
 
 if __name__ == "__main__":
     keep_alive()
