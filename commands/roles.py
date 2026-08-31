@@ -12,6 +12,16 @@ class RoleManagement(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    def check_staff_permission(self, author: discord.Member) -> bool:
+        if author.guild_permissions.administrator or author.guild_permissions.manage_roles:
+            return True
+        staff_role_id = getattr(config, "STAFF_ROLE_ID", None) or getattr(config, "AUTHORIZED_ROLE_ID", None)
+        if staff_role_id:
+            staff_role = author.guild.get_role(staff_role_id)
+            if staff_role and staff_role in author.roles:
+                return True
+        return False
+
     def find_role(self, guild: discord.Guild, query: str):
         query = query.strip()
         clean_id = query.replace("<@&", "").replace(">", "").strip()
@@ -39,11 +49,8 @@ class RoleManagement(commands.Cog):
         return None
 
     async def process_role_give(self, author: discord.Member, target: discord.Member, role: discord.Role, guild: discord.Guild):
-        staff_role_id = getattr(config, "STAFF_ROLE_ID", None)
-        if staff_role_id:
-            staff_role = guild.get_role(staff_role_id)
-            if staff_role and staff_role not in author.roles and not author.guild_permissions.administrator:
-                return False, "❌ Bu komutu kullanmak için yetkiniz yok!"
+        if not self.check_staff_permission(author):
+            return False, "❌ Bu komutu kullanmak için yetkiniz yok!"
 
         if role.permissions.administrator:
             return False, "❌ **Güvenlik Uyarısı:** Yönetici yetkisine sahip roller bu komutla verilemez!"
@@ -71,11 +78,8 @@ class RoleManagement(commands.Cog):
         return True, f"{target.mention} kullanıcısına {role.mention} rolü başarıyla verildi."
 
     async def process_role_remove(self, author: discord.Member, target: discord.Member, role: discord.Role, guild: discord.Guild):
-        staff_role_id = getattr(config, "STAFF_ROLE_ID", None)
-        if staff_role_id:
-            staff_role = guild.get_role(staff_role_id)
-            if staff_role and staff_role not in author.roles and not author.guild_permissions.administrator:
-                return False, "❌ Bu komutu kullanmak için yetkiniz yok!"
+        if not self.check_staff_permission(author):
+            return False, "❌ Bu komutu kullanmak için yetkiniz yok!"
 
         if role.permissions.administrator:
             return False, "❌ **Güvenlik Uyarısı:** Yönetici yetkisine sahip roller bu komutla alınamaz!"
@@ -148,8 +152,8 @@ class RoleManagement(commands.Cog):
     @app_commands.command(name="toplurolver", description="Hedef role sahip tüm kullanıcılara yeni bir rol verir.")
     @app_commands.describe(kaynak_rol="Hangi role sahip olanlar etkilenecek?", verilecek_rol="Verilecek yeni rol")
     async def toplu_rol_ver(self, interaction: discord.Interaction, kaynak_rol: discord.Role, verilecek_rol: discord.Role):
-        if not interaction.user.guild_permissions.administrator and interaction.user.id != interaction.guild.owner_id:
-            return await interaction.response.send_message("❌ Bu komutu yalnızca Yöneticiler kullanabilir.", ephemeral=True)
+        if not self.check_staff_permission(interaction.user):
+            return await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz yok!", ephemeral=True)
 
         if verilecek_rol >= interaction.guild.me.top_role:
             return await interaction.response.send_message("❌ Botun yetkisi bu rolü vermeye yetmiyor.", ephemeral=True)
@@ -171,8 +175,8 @@ class RoleManagement(commands.Cog):
     @app_commands.command(name="toplurolal", description="Hedef role sahip tüm kullanıcılardan belirtilen bir rolü alır.")
     @app_commands.describe(kaynak_rol="Hangi role sahip olanlar etkilenecek?", alinacak_rol="Kullanıcılardan alınacak rol")
     async def toplu_rol_al(self, interaction: discord.Interaction, kaynak_rol: discord.Role, alinacak_rol: discord.Role):
-        if not interaction.user.guild_permissions.administrator and interaction.user.id != interaction.guild.owner_id:
-            return await interaction.response.send_message("❌ Bu komutu yalnızca Yöneticiler kullanabilir.", ephemeral=True)
+        if not self.check_staff_permission(interaction.user):
+            return await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz yok!", ephemeral=True)
 
         if alinacak_rol >= interaction.guild.me.top_role:
             return await interaction.response.send_message("❌ Botun yetkisi bu rolü almaya yetmiyor.", ephemeral=True)
