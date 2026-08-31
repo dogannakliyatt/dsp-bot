@@ -133,6 +133,7 @@ class RPTools(commands.Cog):
     @app_commands.describe(kullanıcı="Sicili sorgulanacak kullanıcı")
     async def sicil(self, interaction: discord.Interaction, kullanıcı: discord.Member):
         records = await asyncio.to_thread(database.get_user_history, kullanıcı.id)
+        penalties = await asyncio.to_thread(database.get_user_penalties, kullanıcı.id)
 
         created_ts = int(kullanıcı.created_at.timestamp())
         joined_ts = int(kullanıcı.joined_at.timestamp()) if kullanıcı.joined_at else None
@@ -157,6 +158,17 @@ class RPTools(commands.Cog):
                 date_str = r["timestamp"].strftime("%d/%m/%Y %H:%M") if hasattr(r["timestamp"], "strftime") else str(r["timestamp"])
                 rec_str += f"**{idx}.** `{r['parti_name']}` & `{r['rp_name']}` — Yetkili: {staff_text} ({date_str})\n"
             embed.add_field(name="Geçmiş Kayıt İşlemleri", value=rec_str, inline=False)
+
+        if not penalties:
+            embed.add_field(name="⚖️ Ceza Geçmişi", value="*Temiz! Herhangi bir ceza kaydı bulunmuyor.*", inline=False)
+        else:
+            pen_str = ""
+            for idx, p in enumerate(penalties[:5], start=1):
+                staff_user = interaction.guild.get_member(p["staff_id"]) if p.get("staff_id") else None
+                staff_text = staff_user.mention if staff_user else f"`ID: {p.get('staff_id')}`"
+                date_str = p["timestamp"].strftime("%d/%m/%Y %H:%M") if hasattr(p["timestamp"], "strftime") else str(p["timestamp"])
+                pen_str += f"**{idx}.** Tür: `{p['action_type']}` — Sebep: *{p['reason']}* — Yetkili: {staff_text} ({date_str})\n"
+            embed.add_field(name="⚖️ Ceza Geçmişi (Ban, Kick, Timeout)", value=pen_str, inline=False)
 
         roles_list = [r.mention for r in kullanıcı.roles if not r.is_default()]
         embed.add_field(name="Mevcut Rolleri", value=", ".join(roles_list) if roles_list else "*Rolü yok*", inline=False)
