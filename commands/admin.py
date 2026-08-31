@@ -2,7 +2,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import datetime
+import asyncio
 import config
+import database
 
 class AdminCommands(commands.Cog):
     def __init__(self, bot):
@@ -84,6 +86,7 @@ class AdminCommands(commands.Cog):
 
         try:
             await kullanici.ban(reason=sebep)
+            await asyncio.to_thread(database.add_penalty, kullanici.id, interaction.user.id, "Yasaklama (Ban)", sebep)
             await interaction.response.send_message(f"✅ {kullanici.mention} sunucudan yasaklandı. Sebep: {sebep}")
             await self.log_admin_action(interaction.guild, interaction.user, kullanici, "Yasaklama", sebep)
         except Exception as e:
@@ -122,6 +125,7 @@ class AdminCommands(commands.Cog):
         duration = datetime.timedelta(minutes=sure_dakika)
         try:
             await kullanici.timeout(duration, reason=sebep)
+            await asyncio.to_thread(database.add_penalty, kullanici.id, interaction.user.id, f"Susturma ({sure_dakika} dk)", sebep)
             await interaction.response.send_message(f"🔇 {kullanici.mention} {sure_dakika} dakika susturuldu. Sebep: {sebep}")
             await self.log_admin_action(interaction.guild, interaction.user, kullanici, f"Susturma ({sure_dakika} dk)", sebep)
         except Exception:
@@ -154,6 +158,7 @@ class AdminCommands(commands.Cog):
 
         try:
             await kullanici.kick(reason=sebep)
+            await asyncio.to_thread(database.add_penalty, kullanici.id, interaction.user.id, "Sunucudan Atma (Kick)", sebep)
             await interaction.response.send_message(f"👢 {kullanici.mention} sunucudan atıldı. Sebep: {sebep}")
             await self.log_admin_action(interaction.guild, interaction.user, kullanici, "Sunucudan Atma", sebep)
         except Exception:
