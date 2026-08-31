@@ -56,6 +56,16 @@ def init_db():
             );
         ''')
         cursor.execute('''
+            CREATE TABLE IF NOT EXISTS penalties (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                staff_id BIGINT NOT NULL,
+                action_type TEXT NOT NULL,
+                reason TEXT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        ''')
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS polls (
                 poll_id SERIAL PRIMARY KEY,
                 title TEXT NOT NULL,
@@ -189,7 +199,17 @@ def export_all_registers():
         cursor.execute("SELECT id, user_id, username, new_nick, parti_name, rp_name, roles_given, staff_id, timestamp FROM registers ORDER BY id ASC")
         return cursor.fetchall()
 
-# --- OYLAMA SİSTEMİ VERİTABANI İŞLEMLERİ ---
+def add_penalty(user_id, staff_id, action_type, reason):
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute('''
+            INSERT INTO penalties (user_id, staff_id, action_type, reason)
+            VALUES (%s, %s, %s, %s)
+        ''', (user_id, staff_id, action_type, reason))
+
+def get_user_penalties(user_id):
+    with get_db_cursor(commit=False) as cursor:
+        cursor.execute("SELECT * FROM penalties WHERE user_id = %s ORDER BY timestamp DESC", (user_id,))
+        return cursor.fetchall()
 
 def add_poll(title, channel_id, target_role_id=None):
     with get_db_cursor(commit=True) as cursor:
@@ -248,8 +268,6 @@ def delete_poll(poll_id):
         cursor.execute("DELETE FROM poll_candidates WHERE poll_id = %s", (poll_id,))
         cursor.execute("DELETE FROM poll_votes WHERE poll_id = %s", (poll_id,))
 
-# --- ÇEKİLİŞ SİSTEMİ VERİTABANI İŞLEMLERİ ---
-
 def create_db_giveaway(guild_id, channel_id, prize, winners_count, end_time, host_id, requirements):
     with get_db_cursor(commit=True) as cursor:
         cursor.execute('''
@@ -292,8 +310,6 @@ def get_giveaway_participants(giveaway_id):
     with get_db_cursor(commit=False) as cursor:
         cursor.execute("SELECT user_id FROM giveaway_participants WHERE giveaway_id = %s", (giveaway_id,))
         return [row["user_id"] for row in cursor.fetchall()]
-
-# --- İSTATİSTİK VE BİLGİ KANALLARI AYARLARI ---
 
 def get_stat_setting(key: str, default: str = "") -> str:
     with get_db_cursor(commit=False) as cursor:
