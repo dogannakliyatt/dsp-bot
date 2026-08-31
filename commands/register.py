@@ -9,6 +9,7 @@ BASE_MEMBER_ROLE_ID = 1537153933305315328
 UNREGISTERED_ROLE_ID = 1537154022497329233
 REGISTRATION_LOG_CHANNEL_ID = 1537159620374564875
 REPORT_LOG_CHANNEL_ID = 1541807577837342834
+MISAFIR_ROLE_ID = 1543955147120709694
 
 PARTY_ROLES = {
     "GB": [1537148955840741376, 1537153445067489321],
@@ -207,6 +208,50 @@ class Register(commands.Cog):
                 await log_channel.send(embed=embed)
             except Exception as e:
                 print(f"[HATA] Kayıt log gönderilemedi: {e}")
+
+    @app_commands.command(name="misafirkaydet", description="Kullanıcının tüm rollerini alır ve misafir rolü verir.")
+    @app_commands.describe(kullanıcı="İşlem yapılacak kullanıcı")
+    async def misafirkaydet(self, interaction: discord.Interaction, kullanıcı: discord.Member):
+        staff_role_id = getattr(config, "STAFF_ROLE_ID", None) or getattr(config, "AUTHORIZED_ROLE_ID", None)
+        if staff_role_id:
+            staff_role = interaction.guild.get_role(staff_role_id)
+            if staff_role and staff_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
+                return await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz yok!", ephemeral=True)
+
+        if interaction.user.id != interaction.guild.owner_id and kullanıcı.top_role >= interaction.user.top_role:
+            return await interaction.response.send_message("❌ Sizden eşit veya daha üst roldeki birine bu işlemi yapamazsınız!", ephemeral=True)
+
+        if kullanıcı.top_role >= interaction.guild.me.top_role:
+            return await interaction.response.send_message("❌ Bu kullanıcının rolü botun rolünden yüksek veya eşit olduğu için işlem yapılamaz!", ephemeral=True)
+
+        misafir_rolü = interaction.guild.get_role(MISAFIR_ROLE_ID)
+        if not misafir_rolü:
+            return await interaction.response.send_message("❌ Sistemde misafir rolü bulunamadı!", ephemeral=True)
+
+        await interaction.response.defer()
+
+        # Botun yetkisinin yeteceği ve bot/entegrasyon harici olan tüm rollerini al
+        roles_to_remove = [r for r in kullanıcı.roles if r != interaction.guild.default_role and not r.is_integration() and not r.is_bot_managed() and r < interaction.guild.me.top_role]
+
+        if roles_to_remove:
+            try:
+                await kullanıcı.remove_roles(*roles_to_remove, reason=f"Misafir kaydedildi - Yetkili: {interaction.user}")
+            except Exception as e:
+                print(f"Misafir kaydedilirken roller alınırken hata: {e}")
+
+        try:
+            await kullanıcı.add_roles(misafir_rolü, reason=f"Misafir kaydedildi - Yetkili: {interaction.user}")
+        except Exception as e:
+            print(f"Misafir rolü verilirken hata: {e}")
+
+        embed = discord.Embed(
+            title="👤 Misafir Kaydı Başarılı",
+            description=f"{kullanıcı.mention} isimli üye misafir olarak kaydedildi ve rolleri düzenlendi.",
+            color=discord.Color.green(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc)
+        )
+        embed.set_footer(text=f"İşlemi Yapan: {interaction.user.display_name}", icon_url=interaction.user.display_avatar.url)
+        await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="kayıtsızver", description="Kullanıcının tüm rollerini ve takma adını sıfırlayıp kayıtsıza atar.")
     @app_commands.describe(
