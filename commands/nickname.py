@@ -11,7 +11,20 @@ class NicknameManagement(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    def check_staff_permission(self, author: discord.Member) -> bool:
+        if author.guild_permissions.administrator or author.guild_permissions.manage_nicknames:
+            return True
+        staff_role_id = getattr(config, "STAFF_ROLE_ID", None) or getattr(config, "AUTHORIZED_ROLE_ID", None)
+        if staff_role_id:
+            staff_role = author.guild.get_role(staff_role_id)
+            if staff_role and staff_role in author.roles:
+                return True
+        return False
+
     async def process_name_change(self, author: discord.Member, target: discord.Member, new_name: str, guild: discord.Guild):
+        if not self.check_staff_permission(author):
+            return False, "❌ Bu komutu kullanmak için yetkiniz yok!"
+
         if len(new_name) > DISCORD_NICK_LIMIT:
             return False, f"❌ **Karakter Sınırı Aşıldı!**\nDiscord takma ad sınırı en fazla **{DISCORD_NICK_LIMIT}** karakterdir. Girdiğiniz isim **{len(new_name)}** karakter."
 
@@ -66,7 +79,7 @@ class NicknameManagement(commands.Cog):
         isim="Yeni verilecek takma ad (Maksimum 32 karakter)"
     )
     async def isimdegistir_slash(self, interaction: discord.Interaction, kullanıcı: discord.Member, isim: str):
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
 
         success, msg = await self.process_name_change(interaction.user, kullanıcı, isim, interaction.guild)
         if not success:
@@ -80,7 +93,7 @@ class NicknameManagement(commands.Cog):
             timestamp=datetime.datetime.now(datetime.timezone.utc)
         )
         embed.set_footer(text=f"İşlemi Yapan: {interaction.user.display_name}")
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @commands.command(name="isimdeğistir", aliases=["İsimdeğistir", "İSİMDEĞİSTİR", "isimdegistir", "İsimdegistir", "İSİMDEGİSTİR"])
     async def isimdegistir_prefix(self, ctx: commands.Context, kullanıcı: discord.Member = None, *, yeni_isim: str = None):
