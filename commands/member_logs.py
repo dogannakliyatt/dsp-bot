@@ -6,7 +6,6 @@ import config
 LOG_CHANNEL_ID = getattr(config, "MEMBER_LOG_CHANNEL_ID", 1537161700380377138)
 AUTOPING_CHANNEL_ID = getattr(config, "AUTOPING_CHANNEL_ID", 1545438496213311488)
 WELCOME_CHANNEL_ID = getattr(config, "WELCOME_CHANNEL_ID", 1537157370264944690)
-STAFF_ROLE_ID = getattr(config, "STAFF_ROLE_ID", 1537129117152055426)
 
 def calculate_account_age(created_at: datetime.datetime):
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -71,7 +70,7 @@ class MemberLogs(commands.Cog):
             )
             embed.set_thumbnail(url=member.display_avatar.url)
             
-            mention_content = f"<@&{STAFF_ROLE_ID}>, {member.mention} sunucuya giriş yaptı."
+            mention_content = f"{member.mention} sunucuya giriş yaptı."
             try:
                 await welcome_channel.send(content=mention_content, embed=embed)
             except Exception:
