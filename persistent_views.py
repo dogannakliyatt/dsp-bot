@@ -3,6 +3,7 @@ import config
 import database
 import datetime
 import asyncio
+from commands.register_panel import KayitPaneliView
 
 def ensure_utc(dt):
     if dt is None:
@@ -17,8 +18,6 @@ def ensure_utc(dt):
             return dt.replace(tzinfo=datetime.timezone.utc)
         return dt
     return datetime.datetime.now(datetime.timezone.utc)
-
-# --- OYLAMA / SEÇİM KALICI GÖRÜNÜMLERİ ---
 
 class OyOnayView(discord.ui.View):
     def __init__(self, poll_id: int, candidate_id: int, candidate_name: str, poll_title: str):
@@ -121,8 +120,6 @@ class OylamaView(discord.ui.View):
             self.add_item(AdaySelect(poll_id, candidates, poll_title))
 
 
-# --- ÇEKİLİŞ KALICI GÖRÜNÜMLERİ ---
-
 class GiveawayView(discord.ui.View):
     def __init__(self, guild_id: int = 0):
         super().__init__(timeout=None)
@@ -176,16 +173,15 @@ class GiveawayView(discord.ui.View):
             pass
 
 
-# --- OTOMATİK YÜKLEYİCİ FONKSİYON ---
-
 async def register_all_persistent_views(bot: discord.Client):
     bot.add_view(GiveawayView())
+    bot.add_view(KayitPaneliView())
 
     try:
         active_polls = await asyncio.to_thread(database.get_active_polls)
         for p in active_polls:
             candidates = await asyncio.to_thread(database.get_candidates, p["poll_id"])
             bot.add_view(OylamaView(p["poll_id"], p["title"], candidates))
-        print(f"🛡️ [KORUMA] {len(active_polls)} adet oylama ve çekiliş butonu kalıcı hafızaya alındı.")
+        print(f"🛡️ [KORUMA] {len(active_polls)} adet oylama, çekiliş ve kayıt butonu kalıcı hafızaya alındı.")
     except Exception as e:
         print(f"⚠️ [KORUMA HATASI] Oylamalar yüklenemedi: {e}")
