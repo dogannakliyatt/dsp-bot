@@ -6,6 +6,37 @@ import config
 
 TARGET_ROLE_ID = getattr(config, "BASE_MEMBER_ROLE_ID", 1537153933305315328)
 
+# Makamların asıl ayırt edici ana rol ID'leri ve hiyerarşik öncelik sırası
+PARTY_TITLE_PRIORITY = [
+    ("GB", 1537148955840741376),
+    ("GBV", 1537149075194118248),
+    ("PGS", 1537149226990182450),
+    ("MYKB", 1537149324473929778),
+    ("OB", 1537149401649381417),
+    ("GBY", 1537149477796970686),
+    ("İB", 1537149544289275987),
+    ("SZC", 1537149604343316572),
+    ("GKB", 1537149684345475123),
+    ("MYKÜ", 1537149762913046568)
+]
+
+RP_TITLE_PRIORITY = [
+    ("CBY", 1537595817429569706),
+    ("CB", 1537149921541492836),
+    ("BB", 1537149991146229810),
+    ("TBMMBV", 1537150202857787402),
+    ("TBMMB", 1537150038512242740),
+    ("TBMMK", 1537154296737701960),
+    ("TCK", 1537150254833467502),
+    ("İBB", 1537151635170525334),
+    ("ABB", 1537151839881924691),
+    ("İZBB", 1537151887231426620),
+    ("BBB", 1537151950884175872),
+    ("MGBV", 1537150854786719875),  # MGB'den önce kontrol edilir
+    ("MGB", 1537150788533485578),   # Meclis Grup Başkanı asıl rol ID
+    ("MV", 1537150966535553035)     # Düz Milletvekili
+]
+
 class AutoNickSync(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -21,18 +52,16 @@ class AutoNickSync(commands.Cog):
         parti_title = None
         rp_title = None
 
-        for code, req_ids in config.PARTY_ROLES.items():
-            if code == "Üye" or not req_ids:
-                continue
-            if all(r_id in user_role_ids for r_id in req_ids):
-                parti_title = code
+        # 1. Parti Makamını Belirleme
+        for title, role_id in PARTY_TITLE_PRIORITY:
+            if role_id in user_role_ids:
+                parti_title = title
                 break
 
-        for code, req_ids in config.RP_ROLES.items():
-            if code == "Yok" or not req_ids:
-                continue
-            if all(r_id in user_role_ids for r_id in req_ids):
-                rp_title = code
+        # 2. RP Makamını Belirleme (MGBV ve CBY önceliklidir)
+        for title, role_id in RP_TITLE_PRIORITY:
+            if role_id in user_role_ids:
+                rp_title = title
                 break
 
         return parti_title, rp_title
@@ -54,9 +83,6 @@ class AutoNickSync(commands.Cog):
 
         return expected[:32]
 
-    # ==========================================
-    # ⚡ ANLIK ROL DEĞİŞİKLİĞİ DİNLEYİCİSİ
-    # ==========================================
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
         if after.bot or after.id == after.guild.owner_id:
@@ -89,12 +115,9 @@ class AutoNickSync(commands.Cog):
                 await asyncio.sleep(1)
                 self._updating_members.discard(after.id)
 
-    # ==========================================
-    # 🚀 GÜVENLİ VE HIZLI TOPLU EŞİTLEME KOMUTU
-    # ==========================================
     @app_commands.command(
         name="ototakmaadesitle", 
-        description="Yalnızca DSP Üye rolüne sahip üyelerin takma adlarını güvenle senkronize eder."
+        description="DSP Üyelerinin makam takma adlarını güncel rollere göre baştan eşitler."
     )
     async def sync_all_nicknames(self, interaction: discord.Interaction):
         if not config.is_authorized(interaction.user, interaction.guild):
@@ -141,7 +164,6 @@ class AutoNickSync(commands.Cog):
                 except Exception:
                     failed_count += 1
 
-        # Rate limit koruması için 2'şerli gruplarla güvenli ilerleme
         batch_size = 2
         for i in range(0, len(eligible_members), batch_size):
             batch = eligible_members[i:i + batch_size]
