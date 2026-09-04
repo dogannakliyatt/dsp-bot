@@ -4,7 +4,7 @@ import datetime
 import config
 
 LOG_CHANNEL_ID = getattr(config, "MEMBER_LOG_CHANNEL_ID", 1537161700380377138)
-AUTOPING_CHANNEL_ID = getattr(config, "AUTOPING_CHANNEL_ID", 1537158034294448128)
+AUTOPING_CHANNEL_ID = getattr(config, "AUTOPING_CHANNEL_ID", 1545438496213311488)
 WELCOME_CHANNEL_ID = getattr(config, "WELCOME_CHANNEL_ID", 1537157370264944690)
 STAFF_ROLE_ID = getattr(config, "STAFF_ROLE_ID", 1537129117152055426)
 
@@ -30,7 +30,6 @@ class MemberLogs(commands.Cog):
         if member.bot:
             return
 
-        # 1. Otomatik Kayıtsız Rolü Verme
         unreg_role_id = getattr(config, "UNREGISTERED_ROLE_ID", None)
         if unreg_role_id:
             unreg_role = member.guild.get_role(unreg_role_id)
@@ -40,7 +39,6 @@ class MemberLogs(commands.Cog):
                 except Exception:
                     pass
 
-        # 2. Giriş Log Mesajı (Kalıcı Log Kanalı)
         log_channel = member.guild.get_channel(LOG_CHANNEL_ID)
         if log_channel:
             total_members = member.guild.member_count
@@ -50,20 +48,14 @@ class MemberLogs(commands.Cog):
             except Exception:
                 pass
 
-        # 3. 10 Saniyelik Auto-Ping Bildirimi
         ping_channel = member.guild.get_channel(AUTOPING_CHANNEL_ID)
         if ping_channel:
-            welcome_text = (
-                f"*👋🏻 {member.mention} Hoş Geldiniz, "
-                f"Bu Formu Kullanarak https://discord.com/channels/1537126439739199619/1537157370264944690 "
-                f"Bu Kanaldan Kayıt Olabilirsiniz.*"
-            )
+            welcome_text = f"*👋🏻 {member.mention} Hoş Geldiniz, Bu Formu Doldurarak Kayıt Olabilirsiniz.*"
             try:
                 await ping_channel.send(welcome_text, delete_after=10)
             except Exception:
                 pass
 
-        # 4. Kalıcı Karşılama Embed Bildirimi
         welcome_channel = member.guild.get_channel(WELCOME_CHANNEL_ID)
         if welcome_channel:
             age_str = calculate_account_age(member.created_at)
