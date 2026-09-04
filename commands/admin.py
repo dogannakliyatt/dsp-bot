@@ -2,9 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import datetime
-import asyncio
 import config
-import database
 
 class AdminCommands(commands.Cog):
     def __init__(self, bot):
@@ -30,7 +28,7 @@ class AdminCommands(commands.Cog):
             timestamp=datetime.datetime.now(datetime.timezone.utc)
         )
         embed.add_field(name="İşlemi Yapan Yetkili", value=f"{staff.mention} (`{staff.id}`)", inline=False)
-        embed.add_field(name="İşlem Yapılan Kullanıcı", value=f"{target} (`{getattr(target, 'id', 'N/A')}`)", inline=False)
+        embed.add_field(name="İşlem Yapılan Kullanıcı / Kanal", value=f"{target} (`{getattr(target, 'id', 'N/A')}`)", inline=False)
         embed.add_field(name="İşlem Türü", value=action_type, inline=True)
         embed.add_field(name="Durum", value=status, inline=True)
         embed.add_field(name="Sebep", value=reason, inline=False)
@@ -40,7 +38,7 @@ class AdminCommands(commands.Cog):
         except Exception:
             pass
 
-    @app_commands.command(name="kilit", description="Bulunduğunuz kanalı mesaj yazımına kapatır veya açar.")
+    @app_commands.command(name="kilit", description="Bulunduğunuz kanalın erişim ve yazma izinlerini kilitler veya açar.")
     @app_commands.describe(durum="Kanal kilitleme durumu")
     @app_commands.choices(durum=[
         app_commands.Choice(name="Kapat (Yazmayı Engelle)", value="kapat"),
@@ -53,24 +51,66 @@ class AdminCommands(commands.Cog):
         channel = interaction.channel
         default_role = interaction.guild.default_role
 
-        if durum.value == "kapat":
-            await channel.set_permissions(default_role, send_messages=False)
-            embed = discord.Embed(
-                title="🔒 Kanal Kilitlendi",
-                description="Bu kanal yetkililer tarafından geçici olarak **mesaj gönderimine kapatılmıştır.**",
-                color=discord.Color.red()
-            )
-            await interaction.response.send_message(embed=embed)
-            await self.log_admin_action(interaction.guild, interaction.user, channel.mention, "Kanal Kilitleme", "Kanal kapatıldı")
-        else:
-            await channel.set_permissions(default_role, send_messages=None)
-            embed = discord.Embed(
-                title="🔓 Kanal Kilidi Açıldı",
-                description="Bu kanal yeniden **mesaj gönderimine açılmıştır.**",
-                color=discord.Color.green()
-            )
-            await interaction.response.send_message(embed=embed)
-            await self.log_admin_action(interaction.guild, interaction.user, channel.mention, "Kanal Kilit Açma", "Kanal açıldı")
+        await interaction.response.defer()
+
+        # Kanalın gelişmiş izinlerinde yer alan tüm izin girdileri
+        overwrites = channel.overwrites
+
+        try:
+            if durum.value == "kapat":
+                # 1) @everyone için görme ve yazma iznini kapat
+                everyone_overwrite = overwrites.get(default_role, discord.PermissionOverwrite())
+                everyone_overwrite.view_channel = False
+                everyone_overwrite.send_messages = False
+                await channel.set_permissions(default_role, overwrite=everyone_overwrite, reason="Kanal Kilitlendi: @everyone kapatıldı")
+
+                # 2) Gelişmiş izinlerde bulunan diğer tüm rollerin görme iznini açık tut, yazma iznini kapat
+                for target, overwrite in overwrites.items():
+                    if isinstance(target, discord.Role) and target != default_role:
+                        overwrite.view_channel = True
+                        overwrite.send_messages = False
+                        await channel.set_permissions(target, overwrite=overwrite, reason="Kanal Kilitlendi: Rol yazma kapatıldı")
+
+                embed = discord.Embed(
+                    title="🔒 Kanal Kilitlendi",
+                    description=(
+                        "Bu kanal yetkililer tarafından **mesaj gönderimine kapatılmıştır.**\n\n"
+                        "• `@everyone` görme ve yazma erişimi kapatıldı.\n"
+                        "• Kanaldaki kayıtlı rollerin görme izni açık tutuldu, yazma izinleri kapatıldı."
+                    ),
+                    color=discord.Color.red()
+                )
+                await interaction.followup.send(embed=embed)
+                await self.log_admin_action(interaction.guild, interaction.user, channel.mention, "Kanal Kilitleme", "Kanal kapatıldı")
+
+            else:
+                # 1) @everyone için görme ve yazma izni kapalı kalmaya devam eder
+                everyone_overwrite = overwrites.get(default_role, discord.PermissionOverwrite())
+                everyone_overwrite.view_channel = False
+                everyone_overwrite.send_messages = False
+                await channel.set_permissions(default_role, overwrite=everyone_overwrite, reason="Kanal Kilidi Açıldı: @everyone kapalı tutuldu")
+
+                # 2) Gelişmiş izinlerde bulunan @everyone hariç tüm rollerin görme ve yazma izinlerini aç
+                for target, overwrite in overwrites.items():
+                    if isinstance(target, discord.Role) and target != default_role:
+                        overwrite.view_channel = True
+                        overwrite.send_messages = True
+                        await channel.set_permissions(target, overwrite=overwrite, reason="Kanal Kilidi Açıldı: Rol yazma açıldı")
+
+                embed = discord.Embed(
+                    title="🔓 Kanal Kilidi Açıldı",
+                    description=(
+                        "Bu kanal yeniden **mesaj gönderimine açılmıştır.**\n\n"
+                        "• `@everyone` görme erişimi kapalı kalmaya devam etti.\n"
+                        "• Kanaldaki kayıtlı rollerin görme ve yazma izinleri açıldı."
+                    ),
+                    color=discord.Color.green()
+                )
+                await interaction.followup.send(embed=embed)
+                await self.log_admin_action(interaction.guild, interaction.user, channel.mention, "Kanal Kilit Açma", "Kanal açıldı")
+
+        except Exception as e:
+            await interaction.followup.send(f"❌ Kanal izinleri güncellenirken bir hata oluştu: {e}", ephemeral=True)
 
     @app_commands.command(name="yasakla", description="Kullanıcıyı sunucudan yasaklar.")
     @app_commands.describe(kullanici="Yasaklanacak kullanıcı", sebep="Yasaklama sebebi")
@@ -86,7 +126,6 @@ class AdminCommands(commands.Cog):
 
         try:
             await kullanici.ban(reason=sebep)
-            await asyncio.to_thread(database.add_penalty, kullanici.id, interaction.user.id, "Yasaklama (Ban)", sebep)
             await interaction.response.send_message(f"✅ {kullanici.mention} sunucudan yasaklandı. Sebep: {sebep}")
             await self.log_admin_action(interaction.guild, interaction.user, kullanici, "Yasaklama", sebep)
         except Exception as e:
@@ -125,7 +164,6 @@ class AdminCommands(commands.Cog):
         duration = datetime.timedelta(minutes=sure_dakika)
         try:
             await kullanici.timeout(duration, reason=sebep)
-            await asyncio.to_thread(database.add_penalty, kullanici.id, interaction.user.id, f"Susturma ({sure_dakika} dk)", sebep)
             await interaction.response.send_message(f"🔇 {kullanici.mention} {sure_dakika} dakika susturuldu. Sebep: {sebep}")
             await self.log_admin_action(interaction.guild, interaction.user, kullanici, f"Susturma ({sure_dakika} dk)", sebep)
         except Exception:
@@ -158,7 +196,6 @@ class AdminCommands(commands.Cog):
 
         try:
             await kullanici.kick(reason=sebep)
-            await asyncio.to_thread(database.add_penalty, kullanici.id, interaction.user.id, "Sunucudan Atma (Kick)", sebep)
             await interaction.response.send_message(f"👢 {kullanici.mention} sunucudan atıldı. Sebep: {sebep}")
             await self.log_admin_action(interaction.guild, interaction.user, kullanici, "Sunucudan Atma", sebep)
         except Exception:
