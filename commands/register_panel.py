@@ -7,10 +7,10 @@ import re
 import config
 import database
 
-def clean_text(text: str) -> str:
+def normalize_text(text: str) -> str:
     if not text:
         return ""
-    return (
+    text = (
         text.replace("İ", "i")
         .replace("I", "ı")
         .replace("Ş", "ş")
@@ -19,40 +19,68 @@ def clean_text(text: str) -> str:
         .replace("Ö", "ö")
         .replace("Ç", "ç")
         .lower()
-        .strip()
     )
+    return re.sub(r'[^a-z0-9ıüşöçğ]', '', text)
 
-def match_party_role(text: str):
-    c = clean_text(text)
-    if not c or c in ["yok", "uye", "sivil", "-", "düz üye", "duz uye"]:
+def match_party_role(raw_text: str):
+    norm = normalize_text(raw_text)
+    if not norm or norm in ["yok", "uye", "sivil", "duzuye", "none", "bos"]:
         return "Üye", "Üye"
-    for code in config.PARTY_ROLES.keys():
-        if code == "Üye":
-            continue
-        if clean_text(code) in c or c in clean_text(code):
-            return code, code
-    for full_name, role_id in config.PARTY_STRUCTURE_ROLES.items():
-        if clean_text(full_name) in c:
-            for code, ids in config.PARTY_ROLES.items():
-                if role_id in ids:
-                    return code, full_name
-    return "Üye", text.strip()
 
-def match_rp_role(text: str):
-    c = clean_text(text)
-    if not c or c in ["yok", "sivil", "-", "yok / sivil"]:
-        return "Yok", "Yok"
-    for code in config.RP_ROLES.keys():
-        if code == "Yok":
-            continue
-        if clean_text(code) in c or c in clean_text(code):
+    # Parti Rolleri Eşleştirme Sözlüğü (Tüm varyasyonlar)
+    party_patterns = [
+        ("GB", ["gb", "genelbaskan", "genelbaskani", "baskan", "lider"]),
+        ("GBV", ["gbv", "genelbaskanvekili", "baskanvekili", "vekilbaskan"]),
+        ("PGS", ["pgs", "partigenelsekreteri", "genelsekreter", "sekreter", "sekreteri"]),
+        ("MYKB", ["mykb", "mykbaskani", "merkezyurutmekurulubaskani", "merkezyurutmebaskani"]),
+        ("OB", ["ob", "onursal", "onursalbaskan"]),
+        ("GBY", ["gby", "genelbaskanyardimcisi", "baskanyardimcisi", "yardimci"]),
+        ("İB", ["ib", "ilbaskani", "ilbaskan"]),
+        ("SZC", ["szc", "sozcu", "partisozcusu", "sozcusu"]),
+        ("GKB", ["gkb", "genclikkollari", "genclikkollaribaskani", "genclikbaskani"]),
+        ("MYKÜ", ["myku", "mykuyesi", "myk", "merkezyurutmekurulu", "merkezyurutmekuruluuyesi", "yurutmekuruluuyesi"])
+    ]
+
+    for code, keywords in party_patterns:
+        if norm in keywords:
             return code, code
-    for full_name, role_id in {**config.CABINET_ROLES, **config.PARLIAMENT_ROLES}.items():
-        if clean_text(full_name) in c:
-            for code, ids in config.RP_ROLES.items():
-                if role_id in ids:
-                    return code, full_name
-    return "Yok", text.strip()
+        for kw in keywords:
+            if len(kw) >= 3 and kw in norm:
+                return code, code
+
+    return "Üye", raw_text.strip()
+
+def match_rp_role(raw_text: str):
+    norm = normalize_text(raw_text)
+    if not norm or norm in ["yok", "sivil", "none", "bos", "yoksivil"]:
+        return "Yok", "Yok"
+
+    # RP / Devlet Rolleri Eşleştirme Sözlüğü (Tüm varyasyonlar)
+    rp_patterns = [
+        ("CBY", ["cby", "cumhurbaskanyardimcisi", "baskanyardimcisi", "cbaskaniv"]),
+        ("CB", ["cb", "cumhurbaskani", "reisicumhur", "devletbaskani"]),
+        ("BB", ["bb", "basbakan", "hukumetbaskani"]),
+        ("TBMMBV", ["tbmmbv", "tbmmbaskanvekili", "meclisbaskanvekili"]),
+        ("TBMMB", ["tbmmb", "tbmmbaskani", "meclisbaskani"]),
+        ("TBMMK", ["tbmmk", "tbmmkatibi", "mecliskatibi", "katip"]),
+        ("TCK", ["tck", "tckabinesi", "bakan", "bakanlar", "kabine", "bakanligi", "bakanlik"]),
+        ("İBB", ["ibb", "istanbulbuyuksehir", "istanbulbelediye", "istanbulbb"]),
+        ("ABB", ["abb", "ankarabyuksehir", "ankarabelediye", "ankarabb"]),
+        ("İZBB", ["izbb", "izmirbuyuksehir", "izmirbelediye", "izmirbb"]),
+        ("BBB", ["bbb", "bursabuyuksehir", "bursabelediye", "bursabb"]),
+        ("MGBV", ["mgbv", "meclisgrupbaskanvekili", "grupbaskanvekili"]),
+        ("MGB", ["mgb", "meclisgrupbaskani", "grupbaskani"]),
+        ("MV", ["mv", "milletvekili", "vekil", "meclisuyesi", "parlamenter"])
+    ]
+
+    for code, keywords in rp_patterns:
+        if norm in keywords:
+            return code, code
+        for kw in keywords:
+            if len(kw) >= 3 and kw in norm:
+                return code, code
+
+    return "Yok", raw_text.strip()
 
 class RetModal(discord.ui.Modal, title="Kayıt Başvurusunu Reddet"):
     sebep = discord.ui.TextInput(
@@ -232,14 +260,14 @@ class KayitModal(discord.ui.Modal, title="Kayıt Formu"):
     parti_makami = discord.ui.TextInput(
         label="Parti İçi Makam:",
         placeholder="Üye, GBV, GBY, MYK Üyesi...",
-        min_length=2,
+        min_length=1,
         max_length=50,
         default="Üye"
     )
     rp_makami = discord.ui.TextInput(
         label="RP İçi Makam:",
         placeholder="TBMM Başkanı, Adalet Bakanı, Milletvekili, MGB...",
-        min_length=2,
+        min_length=1,
         max_length=50,
         default="Yok"
     )
@@ -252,6 +280,9 @@ class KayitModal(discord.ui.Modal, title="Kayıt Formu"):
         if not staff_channel:
             return await interaction.response.send_message("❌ Yetkili onay kanalı bulunamadı! Lütfen yöneticiye bildirin.", ephemeral=True)
 
+        detected_p_code, _ = match_party_role(self.parti_makami.value)
+        detected_r_code, _ = match_rp_role(self.rp_makami.value)
+
         embed = discord.Embed(
             title="📥 Yeni Kayıt Başvurusu Geldi!",
             color=config.COLOR_HEX,
@@ -260,8 +291,8 @@ class KayitModal(discord.ui.Modal, title="Kayıt Formu"):
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
         embed.add_field(name="👤 Kullanıcı", value=f"{interaction.user.mention} (`{interaction.user.id}`)", inline=False)
         embed.add_field(name="📛 Belirtilen İsim", value=f"`{self.isim.value}`", inline=False)
-        embed.add_field(name="📌 Parti İçi Makam", value=f"`{self.parti_makami.value}`", inline=True)
-        embed.add_field(name="🏛️ RP İçi Makam", value=f"`{self.rp_makami.value}`", inline=True)
+        embed.add_field(name="📌 Parti İçi Makam", value=f"`{self.parti_makami.value}` ➔ Algılanan: **{detected_p_code}**", inline=True)
+        embed.add_field(name="🏛️ RP İçi Makam", value=f"`{self.rp_makami.value}` ➔ Algılanan: **{detected_r_code}**", inline=True)
         embed.set_footer(text="Aşağıdaki butonları kullanarak başvuruyu değerlendirebilirsiniz.")
 
         view = BasvuruOnayView(
@@ -295,7 +326,7 @@ class RegisterPanelCog(commands.Cog):
         if not interaction.user.guild_permissions.administrator and interaction.user.id != interaction.guild.owner_id:
             return await interaction.response.send_message("❌ Bu komutu yalnızca sunucu yöneticileri kullanabilir.", ephemeral=True)
 
-        target_ch_id = getattr(config, "REGISTER_FORM_CHANNEL_ID", 1537157370264944690)
+        target_ch_id = getattr(config, "REGISTER_FORM_CHANNEL_ID", 1545438496213311488)
         channel = interaction.guild.get_channel(target_ch_id)
         if not channel:
             return await interaction.response.send_message(f"❌ Hedef kanal (`{target_ch_id}`) bulunamadı!", ephemeral=True)
