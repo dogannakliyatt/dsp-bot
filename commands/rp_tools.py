@@ -108,6 +108,47 @@ class RPTools(commands.Cog):
 
         return choices[:25]
 
+    @app_commands.command(name="adaylar", description="Sunucudaki tüm Aday ve Adayı rollerini ve sahiplerini listeler.")
+    async def adaylar(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        guild = interaction.guild
+
+        if not guild.chunked:
+            await guild.chunk()
+
+        candidate_roles = [
+            r for r in guild.roles 
+            if not r.is_default() and (r.name.strip().endswith("Aday") or r.name.strip().endswith("Adayı") or r.name.strip().endswith("Adayi"))
+        ]
+
+        if not candidate_roles:
+            return await interaction.followup.send("ℹ️ Sunucuda sonu **Aday** veya **Adayı** ile biten herhangi bir rol bulunamadı.", ephemeral=True)
+
+        candidate_roles.sort(key=lambda r: r.position, reverse=True)
+
+        embed = discord.Embed(
+            title="🗳️ AKTİF SEÇİM & ADAY LİSTESİ",
+            description="Sunucuda tanımlı olan tüm adaylık rolleri ve adaylar aşağıda belirtilmiştir.\n",
+            color=config.COLOR_HEX,
+            timestamp=datetime.datetime.now(datetime.timezone.utc)
+        )
+
+        for role in candidate_roles:
+            members = [m for m in role.members if not m.bot]
+            if members:
+                members_str = "\n".join([f"• {m.mention} (`{m.display_name}`)" for m in members])
+            else:
+                members_str = "*Aday bulunmuyor (Boş)*"
+            
+            embed.add_field(
+                name=f"📌 {role.name} ({len(members)} Kişi)", 
+                value=f"{members_str}\n\u200b", 
+                inline=False
+            )
+
+        embed.set_footer(text=f"Sorgulayan: {interaction.user.display_name} • Demokratik Sol Parti", icon_url=interaction.user.display_avatar.url)
+        await interaction.followup.send(embed=embed)
+
     @app_commands.command(name="teskilat", description="Parti ve Meclis/Kabine teşkilatlanma durumunu genel rapor halinde listeler.")
     async def teskilat(self, interaction: discord.Interaction):
         await interaction.response.defer()
