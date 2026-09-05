@@ -40,6 +40,36 @@ RP_CHOICES = {
     "MV": "Milletvekili (MV)"
 }
 
+PARTY_TITLE_PRIORITY = [
+    ("GB", 1537148955840741376),
+    ("GBV", 1537149075194118248),
+    ("PGS", 1537149226990182450),
+    ("MYKB", 1537149324473929778),
+    ("OB", 1537149401649381417),
+    ("GBY", 1537149477796970686),
+    ("İB", 1537149544289275987),
+    ("SZC", 1537149604343316572),
+    ("GKB", 1537149684345475123),
+    ("MYKÜ", 1537149762913046568)
+]
+
+RP_TITLE_PRIORITY = [
+    ("CBY", 1537595817429569706),
+    ("CB", 1537149921541492836),
+    ("BB", 1537149991146229810),
+    ("TBMMBV", 1537150202857787402),
+    ("TBMMB", 1537150038512242740),
+    ("TBMMK", 1537154296737701960),
+    ("TCK", 1537150254833467502),
+    ("İBB", 1537151635170525334),
+    ("ABB", 1537151839881924691),
+    ("İZBB", 1537151887231426620),
+    ("BBB", 1537151950884175872),
+    ("MGBV", 1537150854786719875),
+    ("MGB", 1537150788533485578),
+    ("MV", 1537150966535553035)
+]
+
 class ResmiGazeteModal(discord.ui.Modal, title="📜 Resmî Gazete / Bildiri Yayınla"):
     sayi_no = discord.ui.TextInput(
         label="Karar / Sayı No",
@@ -235,6 +265,7 @@ class RPTools(commands.Cog):
 
         await interaction.response.defer()
 
+        # 1. Eski Makam Rollerini Temizle
         roles_to_remove = set()
         if tür.value == "parti":
             for p_code, r_ids in config.PARTY_ROLES.items():
@@ -259,6 +290,7 @@ class RPTools(commands.Cog):
             except Exception:
                 pass
 
+        # 2. Yeni Makam Rollerini Tanımla
         roles_to_add = set()
         base_member_role = interaction.guild.get_role(config.BASE_MEMBER_ROLE_ID)
         if base_member_role and base_member_role not in kullanıcı.roles:
@@ -276,15 +308,44 @@ class RPTools(commands.Cog):
             except Exception:
                 pass
 
-        auto_cog = self.bot.get_cog("AutoNickSync")
-        if auto_cog:
-            new_nick = auto_cog.build_expected_nickname(kullanıcı)
+        # 3. Takma Ad Kurallarını Uygula
+        base_name = kullanıcı.display_name.split("/")[0].strip()
+        if not base_name:
+            base_name = kullanıcı.name
+
+        current_role_ids = {r.id for r in kullanıcı.roles if r not in roles_to_remove}
+        current_role_ids.update(r.id for r in roles_to_add)
+
+        if tür.value == "parti":
+            parti_tag = makam if makam != "Üye" else None
         else:
-            new_nick = kullanıcı.display_name.split("/")[0].strip()
+            parti_tag = None
+            for p_tag, p_rid in PARTY_TITLE_PRIORITY:
+                if p_rid in current_role_ids:
+                    parti_tag = p_tag
+                    break
+
+        if tür.value == "rp":
+            rp_tag = makam if makam != "Yok" else None
+        else:
+            rp_tag = None
+            for r_tag, r_rid in RP_TITLE_PRIORITY:
+                if r_rid in current_role_ids:
+                    rp_tag = r_tag
+                    break
+
+        titles = []
+        if parti_tag:
+            titles.append(parti_tag)
+        if rp_tag:
+            titles.append(rp_tag)
+
+        new_nick = f"{base_name} / {' / '.join(titles)}" if titles else base_name
+        new_nick = new_nick[:32]
 
         if kullanıcı.id != interaction.guild.owner_id and kullanıcı.top_role < interaction.guild.me.top_role:
             try:
-                await kullanıcı.edit(nick=new_nick[:32])
+                await kullanıcı.edit(nick=new_nick, reason=f"Makam Değişimi Takma Ad Güncellemesi: {interaction.user}")
             except Exception:
                 pass
 
@@ -294,7 +355,7 @@ class RPTools(commands.Cog):
                 database.add_register,
                 user_id=kullanıcı.id,
                 username=str(kullanıcı),
-                new_nick=new_nick[:32],
+                new_nick=new_nick,
                 parti_name=f"[Makam Değişimi] {assigned_name}" if tür.value == "parti" else "Mevcut",
                 parti_code=makam if tür.value == "parti" else "Üye",
                 rp_name=f"[Makam Değişimi] {assigned_name}" if tür.value == "rp" else "Mevcut",
@@ -313,7 +374,7 @@ class RPTools(commands.Cog):
         embed.add_field(name="👤 Kullanıcı", value=f"{kullanıcı.mention} (`{kullanıcı.id}`)", inline=False)
         embed.add_field(name="📂 Kategori", value=tür.name, inline=True)
         embed.add_field(name="📌 Yeni Makam", value=f"**{assigned_name}**", inline=True)
-        embed.add_field(name="🏷️ Güncel Takma Ad", value=f"`{new_nick[:32]}`", inline=False)
+        embed.add_field(name="🏷️ Güncel Takma Ad", value=f"`{new_nick}`", inline=False)
         embed.set_footer(text=f"İşlemi Yapan: {interaction.user.display_name}")
 
         await interaction.followup.send(embed=embed)
