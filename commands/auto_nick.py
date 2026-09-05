@@ -2,11 +2,11 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import asyncio
+import re
 import config
 
 TARGET_ROLE_ID = getattr(config, "BASE_MEMBER_ROLE_ID", 1537153933305315328)
 
-# Makamların asıl ayırt edici ana rol ID'leri ve hiyerarşik öncelik sırası
 PARTY_TITLE_PRIORITY = [
     ("GB", 1537148955840741376),
     ("GBV", 1537149075194118248),
@@ -32,9 +32,26 @@ RP_TITLE_PRIORITY = [
     ("ABB", 1537151839881924691),
     ("İZBB", 1537151887231426620),
     ("BBB", 1537151950884175872),
-    ("MGBV", 1537150854786719875),  # MGB'den önce kontrol edilir
-    ("MGB", 1537150788533485578),   # Meclis Grup Başkanı asıl rol ID
-    ("MV", 1537150966535553035)     # Düz Milletvekili
+    ("MGBV", 1537150854786719875),
+    ("MGB", 1537150788533485578),
+    ("MV", 1537150966535553035)
+]
+
+CANDIDATE_TAG_MAP = [
+    ("Cumhurbaşkanı Adayı", "CBA"),
+    ("Cumhurbaskani Adayi", "CBA"),
+    ("Cumhurbaşkanı Aday", "CBA"),
+    ("Milletvekili Adayı", "MVA"),
+    ("Milletvekili Adayi", "MVA"),
+    ("Milletvekili Aday", "MVA"),
+    ("Başbakan Adayı", "BBA"),
+    ("Başbakan Aday", "BBA"),
+    ("İstanbul Büyükşehir Belediye Başkanı Adayı", "İBBA"),
+    ("Ankara Büyükşehir Belediye Başkanı Adayı", "ABBA"),
+    ("İzmir Büyükşehir Belediye Başkanı Adayı", "İZBBA"),
+    ("Bursa Büyükşehir Belediye Başkanı Adayı", "BBBA"),
+    ("Genel Başkan Adayı", "GBA"),
+    ("Genel Başkan Aday", "GBA")
 ]
 
 class AutoNickSync(commands.Cog):
@@ -47,22 +64,38 @@ class AutoNickSync(commands.Cog):
             return "Kullanıcı"
         return display_name.split("/")[0].strip()
 
+    def get_candidate_title(self, member: discord.Member):
+        for role in member.roles:
+            r_name = role.name.strip()
+            for cand_name, cand_tag in CANDIDATE_TAG_MAP:
+                if cand_name.lower() in r_name.lower():
+                    return cand_tag
+            if r_name.endswith("Adayı") or r_name.endswith("Aday") or r_name.endswith("Adayi"):
+                clean = re.sub(r'[^a-zA-ZçğıöşüÇĞİÖŞÜ ]', '', r_name).strip()
+                words = [w for w in clean.split() if w.lower() not in ["aday", "adayı", "adayi"]]
+                tag = "".join([w[0].upper() for w in words]) + "A"
+                if len(tag) >= 2:
+                    return tag
+        return None
+
     def determine_titles(self, member: discord.Member):
         user_role_ids = {r.id for r in member.roles}
         parti_title = None
         rp_title = None
 
-        # 1. Parti Makamını Belirleme
         for title, role_id in PARTY_TITLE_PRIORITY:
             if role_id in user_role_ids:
                 parti_title = title
                 break
 
-        # 2. RP Makamını Belirleme (MGBV ve CBY önceliklidir)
         for title, role_id in RP_TITLE_PRIORITY:
             if role_id in user_role_ids:
                 rp_title = title
                 break
+
+        cand_title = self.get_candidate_title(member)
+        if cand_title:
+            rp_title = cand_title
 
         return parti_title, rp_title
 
@@ -108,7 +141,7 @@ class AutoNickSync(commands.Cog):
         if current_nick != expected_nick:
             self._updating_members.add(after.id)
             try:
-                await after.edit(nick=expected_nick, reason="Otomatik Parti/RP Makam Takma Ad Güncellemesi")
+                await after.edit(nick=expected_nick, reason="Otomatik Parti/RP/Aday Takma Ad Güncellemesi")
             except Exception:
                 pass
             finally:
@@ -117,7 +150,7 @@ class AutoNickSync(commands.Cog):
 
     @app_commands.command(
         name="ototakmaadesitle", 
-        description="DSP Üyelerinin makam takma adlarını güncel rollere göre baştan eşitler."
+        description="DSP Üyelerinin makam ve aday takma adlarını güncel rollere göre baştan eşitler."
     )
     async def sync_all_nicknames(self, interaction: discord.Interaction):
         if not config.is_authorized(interaction.user, interaction.guild):
