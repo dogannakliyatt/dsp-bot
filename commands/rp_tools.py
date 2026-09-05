@@ -3,6 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 import io
 import csv
+import re
 import datetime
 import asyncio
 import config
@@ -68,6 +69,23 @@ RP_TITLE_PRIORITY = [
     ("MGBV", 1537150854786719875),
     ("MGB", 1537150788533485578),
     ("MV", 1537150966535553035)
+]
+
+CANDIDATE_TAG_MAP = [
+    ("Cumhurbaşkanı Adayı", "CBA"),
+    ("Cumhurbaskani Adayi", "CBA"),
+    ("Cumhurbaşkanı Aday", "CBA"),
+    ("Milletvekili Adayı", "MVA"),
+    ("Milletvekili Adayi", "MVA"),
+    ("Milletvekili Aday", "MVA"),
+    ("Başbakan Adayı", "BBA"),
+    ("Başbakan Aday", "BBA"),
+    ("İstanbul Büyükşehir Belediye Başkanı Adayı", "İBBA"),
+    ("Ankara Büyükşehir Belediye Başkanı Adayı", "ABBA"),
+    ("İzmir Büyükşehir Belediye Başkanı Adayı", "İZBBA"),
+    ("Bursa Büyükşehir Belediye Başkanı Adayı", "BBBA"),
+    ("Genel Başkan Adayı", "GBA"),
+    ("Genel Başkan Aday", "GBA")
 ]
 
 class ResmiGazeteModal(discord.ui.Modal, title="📜 Resmî Gazete / Bildiri Yayınla"):
@@ -290,7 +308,7 @@ class RPTools(commands.Cog):
             except Exception:
                 pass
 
-        # 2. Yeni Makam Rollerini Tanımla
+        # 2. Yeni Makam Rollerini Tanımla (1537153295150350466 hariç tutulur)
         roles_to_add = set()
         base_member_role = interaction.guild.get_role(config.BASE_MEMBER_ROLE_ID)
         if base_member_role and base_member_role not in kullanıcı.roles:
@@ -298,6 +316,8 @@ class RPTools(commands.Cog):
 
         target_role_ids = config.PARTY_ROLES.get(makam, []) if tür.value == "parti" else config.RP_ROLES.get(makam, [])
         for rid in target_role_ids:
+            if rid == 1537153295150350466:
+                continue
             r_obj = interaction.guild.get_role(rid)
             if r_obj and r_obj < interaction.guild.me.top_role:
                 roles_to_add.add(r_obj)
@@ -332,6 +352,15 @@ class RPTools(commands.Cog):
             for r_tag, r_rid in RP_TITLE_PRIORITY:
                 if r_rid in current_role_ids:
                     rp_tag = r_tag
+                    break
+
+            for role in kullanıcı.roles:
+                r_name = role.name.strip()
+                for cand_name, cand_t in CANDIDATE_TAG_MAP:
+                    if cand_name.lower() in r_name.lower():
+                        rp_tag = cand_t
+                        break
+                if rp_tag:
                     break
 
         titles = []
