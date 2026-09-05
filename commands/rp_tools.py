@@ -8,6 +8,38 @@ import asyncio
 import config
 import database
 
+PARTY_CHOICES = {
+    "Üye": "Üye (Düz Üye)",
+    "GB": "Genel Başkan (GB)",
+    "GBV": "Genel Başkanvekili (GBV)",
+    "PGS": "Parti Genel Sekreteri (PGS)",
+    "MYKB": "Merkez Yürütme Kurulu Başkanı (MYKB)",
+    "OB": "Onursal Başkan (OB)",
+    "GBY": "Genel Başkan Yardımcısı (GBY)",
+    "İB": "İl Başkanı (İB)",
+    "SZC": "Sözcü (SZC)",
+    "GKB": "Gençlik Kolları Başkanı (GKB)",
+    "MYKÜ": "Merkez Yürütme Kurulu Üyesi (MYKÜ)"
+}
+
+RP_CHOICES = {
+    "Yok": "Yok / Sivil",
+    "CB": "Cumhurbaşkanı (CB)",
+    "CBY": "Cumhurbaşkanı Yardımcısı (CBY)",
+    "BB": "Başbakan (BB)",
+    "TBMMB": "TBMM Başkanı (TBMMB)",
+    "TBMMBV": "TBMM Başkanvekili (TBMMBV)",
+    "TBMMK": "TBMM Kâtibi (TBMMK)",
+    "TCK": "T.C. Kabinesi (TCK)",
+    "İBB": "İBB Başkanı (İBB)",
+    "ABB": "ABB Başkanı (ABB)",
+    "İZBB": "İZBB Başkanı (İZBB)",
+    "BBB": "BBB Başkanı (BBB)",
+    "MGB": "Meclis Grup Başkanı (MGB)",
+    "MGBV": "Meclis Grup Başkanvekili (MGBV)",
+    "MV": "Milletvekili (MV)"
+}
+
 class ResmiGazeteModal(discord.ui.Modal, title="📜 Resmî Gazete / Bildiri Yayınla"):
     sayi_no = discord.ui.TextInput(
         label="Karar / Sayı No",
@@ -57,6 +89,193 @@ class RPTools(commands.Cog):
             return True
         staff_id = getattr(config, "STAFF_ROLE_ID", None) or getattr(config, "AUTHORIZED_ROLE_ID", None)
         return any(role.id == staff_id for role in interaction.user.roles)
+
+    async def makam_autocomplete(self, interaction: discord.Interaction, current: str):
+        secilen_tur = interaction.namespace.tür
+
+        if not secilen_tur:
+            return [app_commands.Choice(name="⚠️ Lütfen önce Tür seçiniz!", value="none")]
+
+        choices = []
+        if secilen_tur == "parti":
+            for code, name in PARTY_CHOICES.items():
+                if current.lower() in name.lower() or current.lower() in code.lower():
+                    choices.append(app_commands.Choice(name=name[:100], value=code))
+        elif secilen_tur == "rp":
+            for code, name in RP_CHOICES.items():
+                if current.lower() in name.lower() or current.lower() in code.lower():
+                    choices.append(app_commands.Choice(name=name[:100], value=code))
+
+        return choices[:25]
+
+    @app_commands.command(name="teskilat", description="Parti ve Meclis/Kabine teşkilatlanma durumunu genel rapor halinde listeler.")
+    async def teskilat(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        guild = interaction.guild
+
+        if not guild.chunked:
+            await guild.chunk()
+
+        embed = discord.Embed(
+            title="🇹🇷 DEMOKRATİK SOL PARTİ & DEVLET TEŞKİLATI RAPORU",
+            description="Sunucudaki güncel parti yönetimi, hükümet ve meclis görev dağılımı aşağıda listelenmiştir.\n",
+            color=config.COLOR_HEX,
+            timestamp=datetime.datetime.now(datetime.timezone.utc)
+        )
+
+        party_roles_map = getattr(config, "PARTY_STRUCTURE_ROLES", {})
+        party_text = ""
+        for title, r_id in party_roles_map.items():
+            role = guild.get_role(r_id)
+            if role and role.members:
+                members_str = ", ".join([m.mention for m in role.members])
+            else:
+                members_str = "*Boşta / Atanmadı*"
+            party_text += f"• **{title}:** {members_str}\n"
+
+        embed.add_field(name="🕊️ Parti Merkez Yönetimi", value=party_text if party_text else "*Rol tanımlanmadı*", inline=False)
+
+        cabinet_map = getattr(config, "CABINET_ROLES", {})
+        cabinet_text = ""
+        for title, r_id in cabinet_map.items():
+            role = guild.get_role(r_id)
+            if role and role.members:
+                members_str = ", ".join([m.mention for m in role.members])
+            else:
+                members_str = "*Boşta*"
+            cabinet_text += f"• **{title}:** {members_str}\n"
+
+        embed.add_field(name="🏛️ Kabine & Yerel Yönetimler", value=cabinet_text if cabinet_text else "*Rol tanımlanmadı*", inline=False)
+
+        parliament_map = getattr(config, "PARLIAMENT_ROLES", {})
+        parliament_text = ""
+        for title, r_id in parliament_map.items():
+            role = guild.get_role(r_id)
+            if role and role.members:
+                if len(role.members) > 8:
+                    members_str = ", ".join([m.mention for m in role.members[:8]]) + f" *(+{len(role.members)-8} vekil)*"
+                else:
+                    members_str = ", ".join([m.mention for m in role.members])
+            else:
+                members_str = "*Boşta*"
+            parliament_text += f"• **{title}:** {members_str}\n"
+
+        embed.add_field(name="⚖️ TBMM Protokolü", value=parliament_text if parliament_text else "*Rol tanımlanmadı*", inline=False)
+        embed.set_footer(text="Demokratik Sol Parti Teşkilat İnceleme")
+
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="makamdegis", description="Bir üyenin Parti veya RP makamını değiştirir ve rollerini günceller.")
+    @app_commands.describe(
+        kullanıcı="Makamı değiştirilecek üye",
+        tür="Değiştirilecek makam kategorisi",
+        makam="Atanacak yeni makam"
+    )
+    @app_commands.choices(tür=[
+        app_commands.Choice(name="Parti Makamı", value="parti"),
+        app_commands.Choice(name="RP Makamı", value="rp")
+    ])
+    @app_commands.autocomplete(makam=makam_autocomplete)
+    async def makamdegis(
+        self,
+        interaction: discord.Interaction,
+        kullanıcı: discord.Member,
+        tür: app_commands.Choice[str],
+        makam: str
+    ):
+        if not self.is_authorized(interaction):
+            return await interaction.response.send_message("❌ Bu komutu kullanmak için yetkiniz yok.", ephemeral=True)
+
+        if makam == "none" or (tür.value == "parti" and makam not in PARTY_CHOICES) or (tür.value == "rp" and makam not in RP_CHOICES):
+            return await interaction.response.send_message("❌ Lütfen geçerli bir makam seçiniz!", ephemeral=True)
+
+        if kullanıcı.top_role >= interaction.guild.me.top_role and kullanıcı.id != interaction.guild.owner_id:
+            return await interaction.response.send_message("❌ Botun yetkisi bu kullanıcıyı düzenlemeye yetmiyor!", ephemeral=True)
+
+        await interaction.response.defer()
+
+        roles_to_remove = set()
+        if tür.value == "parti":
+            for p_code, r_ids in config.PARTY_ROLES.items():
+                if p_code == "Üye":
+                    continue
+                for rid in r_ids:
+                    r_obj = interaction.guild.get_role(rid)
+                    if r_obj and r_obj in kullanıcı.roles and r_obj < interaction.guild.me.top_role:
+                        roles_to_remove.add(r_obj)
+        else:
+            for r_code, r_ids in config.RP_ROLES.items():
+                if r_code == "Yok":
+                    continue
+                for rid in r_ids:
+                    r_obj = interaction.guild.get_role(rid)
+                    if r_obj and r_obj in kullanıcı.roles and r_obj < interaction.guild.me.top_role:
+                        roles_to_remove.add(r_obj)
+
+        if roles_to_remove:
+            try:
+                await kullanıcı.remove_roles(*list(roles_to_remove), reason=f"Makam Değişimi: {interaction.user}")
+            except Exception:
+                pass
+
+        roles_to_add = set()
+        base_member_role = interaction.guild.get_role(config.BASE_MEMBER_ROLE_ID)
+        if base_member_role and base_member_role not in kullanıcı.roles:
+            roles_to_add.add(base_member_role)
+
+        target_role_ids = config.PARTY_ROLES.get(makam, []) if tür.value == "parti" else config.RP_ROLES.get(makam, [])
+        for rid in target_role_ids:
+            r_obj = interaction.guild.get_role(rid)
+            if r_obj and r_obj < interaction.guild.me.top_role:
+                roles_to_add.add(r_obj)
+
+        if roles_to_add:
+            try:
+                await kullanıcı.add_roles(*list(roles_to_add), reason=f"Yeni Makam Ataması: {interaction.user}")
+            except Exception:
+                pass
+
+        auto_cog = self.bot.get_cog("AutoNickSync")
+        if auto_cog:
+            new_nick = auto_cog.build_expected_nickname(kullanıcı)
+        else:
+            new_nick = kullanıcı.display_name.split("/")[0].strip()
+
+        if kullanıcı.id != interaction.guild.owner_id and kullanıcı.top_role < interaction.guild.me.top_role:
+            try:
+                await kullanıcı.edit(nick=new_nick[:32])
+            except Exception:
+                pass
+
+        assigned_name = PARTY_CHOICES.get(makam) if tür.value == "parti" else RP_CHOICES.get(makam)
+        try:
+            await asyncio.to_thread(
+                database.add_register,
+                user_id=kullanıcı.id,
+                username=str(kullanıcı),
+                new_nick=new_nick[:32],
+                parti_name=f"[Makam Değişimi] {assigned_name}" if tür.value == "parti" else "Mevcut",
+                parti_code=makam if tür.value == "parti" else "Üye",
+                rp_name=f"[Makam Değişimi] {assigned_name}" if tür.value == "rp" else "Mevcut",
+                rp_code=makam if tür.value == "rp" else "Yok",
+                roles_given=assigned_name,
+                staff_id=interaction.user.id
+            )
+        except Exception:
+            pass
+
+        embed = discord.Embed(
+            title="🎖️ Makam Değişikliği Tamamlandı",
+            color=discord.Color.green(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc)
+        )
+        embed.add_field(name="👤 Kullanıcı", value=f"{kullanıcı.mention} (`{kullanıcı.id}`)", inline=False)
+        embed.add_field(name="📂 Kategori", value=tür.name, inline=True)
+        embed.add_field(name="📌 Yeni Makam", value=f"**{assigned_name}**", inline=True)
+        embed.add_field(name="🏷️ Güncel Takma Ad", value=f"`{new_nick[:32]}`", inline=False)
+        embed.set_footer(text=f"İşlemi Yapan: {interaction.user.display_name}")
+
+        await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="resmigazete", description="Resmî gazete veya parti bildirisi yayınlar.")
     @app_commands.describe(kanal="Bildirinin gönderileceği kanal (Belirtilmezse bu kanala atar)")
@@ -133,7 +352,6 @@ class RPTools(commands.Cog):
     @app_commands.describe(kullanıcı="Sicili sorgulanacak kullanıcı")
     async def sicil(self, interaction: discord.Interaction, kullanıcı: discord.Member):
         records = await asyncio.to_thread(database.get_user_history, kullanıcı.id)
-        penalties = await asyncio.to_thread(database.get_user_penalties, kullanıcı.id)
 
         created_ts = int(kullanıcı.created_at.timestamp())
         joined_ts = int(kullanıcı.joined_at.timestamp()) if kullanıcı.joined_at else None
@@ -158,17 +376,6 @@ class RPTools(commands.Cog):
                 date_str = r["timestamp"].strftime("%d/%m/%Y %H:%M") if hasattr(r["timestamp"], "strftime") else str(r["timestamp"])
                 rec_str += f"**{idx}.** `{r['parti_name']}` & `{r['rp_name']}` — Yetkili: {staff_text} ({date_str})\n"
             embed.add_field(name="Geçmiş Kayıt İşlemleri", value=rec_str, inline=False)
-
-        if not penalties:
-            embed.add_field(name="⚖️ Ceza Geçmişi", value="*Temiz! Herhangi bir ceza kaydı bulunmuyor.*", inline=False)
-        else:
-            pen_str = ""
-            for idx, p in enumerate(penalties[:5], start=1):
-                staff_user = interaction.guild.get_member(p["staff_id"]) if p.get("staff_id") else None
-                staff_text = staff_user.mention if staff_user else f"`ID: {p.get('staff_id')}`"
-                date_str = p["timestamp"].strftime("%d/%m/%Y %H:%M") if hasattr(p["timestamp"], "strftime") else str(p["timestamp"])
-                pen_str += f"**{idx}.** Tür: `{p['action_type']}` — Sebep: *{p['reason']}* — Yetkili: {staff_text} ({date_str})\n"
-            embed.add_field(name="⚖️ Ceza Geçmişi (Ban, Kick, Timeout)", value=pen_str, inline=False)
 
         roles_list = [r.mention for r in kullanıcı.roles if not r.is_default()]
         embed.add_field(name="Mevcut Rolleri", value=", ".join(roles_list) if roles_list else "*Rolü yok*", inline=False)
