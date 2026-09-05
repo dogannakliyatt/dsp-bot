@@ -2,46 +2,15 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import datetime
+import asyncio
 import config
 import database
 
-BASE_MEMBER_ROLE_ID = 1537153933305315328
-UNREGISTERED_ROLE_ID = 1537154022497329233
-REGISTRATION_LOG_CHANNEL_ID = 1537159620374564875
-REPORT_LOG_CHANNEL_ID = 1541807577837342834
-MISAFIR_ROLE_ID = 1543955147120709694
-
-PARTY_ROLES = {
-    "GB": [1537148955840741376, 1537153445067489321],
-    "GBV": [1537149075194118248],
-    "PGS": [1537149226990182450],
-    "MYKB": [1537149324473929778, 1537153235935174757],
-    "OB": [1537149401649381417],
-    "GBY": [1537149477796970686],
-    "İB": [1537149544289275987],
-    "SZC": [1537149604343316572],
-    "GKB": [1537149684345475123],
-    "MYKÜ": [1537149762913046568, 1537153235935174757],
-    "Üye": [1537153933305315328]
-}
-
-RP_ROLES = {
-    "CB": [1537149921541492836],
-    "CBY": [1537595817429569706],
-    "BB": [1537149991146229810],
-    "TBMMB": [1537150038512242740],
-    "TBMMBV": [1537150202857787402],
-    "TBMMK": [1537154296737701960],
-    "TCK": [1537150254833467502],
-    "İBB": [1537150309300838490, 1537151635170525334],
-    "ABB": [1537150309300838490, 1537151839881924691],
-    "İZBB": [1537150309300838490, 1537151887231426620],
-    "BBB": [1537150309300838490, 1537151950884175872],
-    "MGB": [1537150966535553035, 1537153295150350466, 1537150788533485578],
-    "MGBV": [1537150966535553035, 1537150854786719875, 1537153295150350466],
-    "MV": [1537150966535553035, 1537153295150350466],
-    "Yok": []
-}
+BASE_MEMBER_ROLE_ID = getattr(config, "BASE_MEMBER_ROLE_ID", 1537153933305315328)
+UNREGISTERED_ROLE_ID = getattr(config, "UNREGISTERED_ROLE_ID", 1537154022497329233)
+REGISTRATION_LOG_CHANNEL_ID = getattr(config, "REGISTER_LOG_CHANNEL_ID", 1537159620374564875)
+REPORT_LOG_CHANNEL_ID = getattr(config, "REPORT_LOG_CHANNEL_ID", 1541807577837342834)
+MISAFIR_ROLE_ID = getattr(config, "MISAFIR_ROLE_ID", 1543955147120709694)
 
 class Register(commands.Cog):
     def __init__(self, bot):
@@ -136,12 +105,12 @@ class Register(commands.Cog):
         if base_role:
             roles_to_add.add(base_role)
 
-        for r_id in PARTY_ROLES.get(p_val, []):
+        for r_id in config.PARTY_ROLES.get(p_val, []):
             role_obj = interaction.guild.get_role(r_id)
             if role_obj and role_obj < interaction.guild.me.top_role:
                 roles_to_add.add(role_obj)
 
-        for r_id in RP_ROLES.get(r_val, []):
+        for r_id in config.RP_ROLES.get(r_val, []):
             role_obj = interaction.guild.get_role(r_id)
             if role_obj and role_obj < interaction.guild.me.top_role:
                 roles_to_add.add(role_obj)
@@ -157,7 +126,8 @@ class Register(commands.Cog):
         roles_text = ", ".join(dict.fromkeys(roles_text_list))
 
         try:
-            database.add_register(
+            await asyncio.to_thread(
+                database.add_register,
                 user_id=kullanıcı.id,
                 username=str(kullanıcı),
                 new_nick=new_nickname,
@@ -226,11 +196,10 @@ class Register(commands.Cog):
 
         misafir_rolü = interaction.guild.get_role(MISAFIR_ROLE_ID)
         if not misafir_rolü:
-            return await interaction.response.send_message("❌ Sistemde misafir rolü bulunamadı!", ephemeral=True)
+            return await interaction.response.send_message("❌ Sistemde 1543955147120709694 ID'li misafir rolü bulunamadı!", ephemeral=True)
 
         await interaction.response.defer()
 
-        # Botun yetkisinin yeteceği ve bot/entegrasyon harici olan tüm rollerini al
         roles_to_remove = [r for r in kullanıcı.roles if r != interaction.guild.default_role and not r.is_integration() and not r.is_bot_managed() and r < interaction.guild.me.top_role]
 
         if roles_to_remove:
@@ -244,14 +213,49 @@ class Register(commands.Cog):
         except Exception as e:
             print(f"Misafir rolü verilirken hata: {e}")
 
-        embed = discord.Embed(
-            title="👤 Misafir Kaydı Başarılı",
-            description=f"{kullanıcı.mention} isimli üye misafir olarak kaydedildi ve rolleri düzenlendi.",
-            color=discord.Color.green(),
+        clean_nick = kullanıcı.nick if kullanıcı.nick else kullanıcı.name
+        try:
+            await asyncio.to_thread(
+                database.add_register,
+                user_id=kullanıcı.id,
+                username=str(kullanıcı),
+                new_nick=clean_nick,
+                parti_name="Misafir",
+                parti_code="Misafir",
+                rp_name="Misafir",
+                rp_code="Misafir",
+                roles_given=misafir_rolü.name,
+                staff_id=interaction.user.id
+            )
+        except Exception as e:
+            print(f"[HATA] Misafir kaydı veritabanına eklenemedi: {e}")
+
+        log_embed = discord.Embed(
+            title="👤 Misafir Kaydı Gerçekleştirildi",
+            color=discord.Color.teal(),
             timestamp=datetime.datetime.now(datetime.timezone.utc)
         )
-        embed.set_footer(text=f"İşlemi Yapan: {interaction.user.display_name}", icon_url=interaction.user.display_avatar.url)
-        await interaction.followup.send(embed=embed)
+        log_embed.set_thumbnail(url=kullanıcı.display_avatar.url)
+        log_embed.add_field(name="Kayıt Edilen Kullanıcı", value=f"{kullanıcı.mention} (`{kullanıcı.id}`)", inline=False)
+        log_embed.add_field(name="İşlemi Yapan Yetkili", value=f"{interaction.user.mention} (`{interaction.user.id}`)", inline=False)
+        log_embed.add_field(name="Tanımlanan Rol", value=misafir_rolü.mention, inline=True)
+        log_embed.add_field(name="Alınan Rol Sayısı", value=f"`{len(roles_to_remove)} adet`", inline=True)
+        log_embed.set_footer(text=f"İşlemi Yapan: {interaction.user.display_name}", icon_url=interaction.user.display_avatar.url)
+
+        await interaction.followup.send(embed=log_embed)
+
+        log_channel = interaction.guild.get_channel(REGISTRATION_LOG_CHANNEL_ID)
+        if log_channel is None:
+            try:
+                log_channel = await interaction.guild.fetch_channel(REGISTRATION_LOG_CHANNEL_ID)
+            except Exception:
+                pass
+
+        if log_channel and log_channel.id != interaction.channel_id:
+            try:
+                await log_channel.send(embed=log_embed)
+            except Exception as e:
+                print(f"[HATA] Misafir kayıt logu gönderilemedi: {e}")
 
     @app_commands.command(name="kayıtsızver", description="Kullanıcının tüm rollerini ve takma adını sıfırlayıp kayıtsıza atar.")
     @app_commands.describe(
